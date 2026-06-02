@@ -1,0 +1,316 @@
+/* Sidebar transition */
+#sidebar {
+  transition: width 0.25s ease;
+}
+
+/* Thu nhỏ */
+#sidebar.sidebar-collapsed {
+  width: 78px !important;
+}
+
+/* Ẩn chữ khi thu nhỏ */
+#sidebar.sidebar-collapsed .label,
+#sidebar.sidebar-collapsed .group-title {
+  display: none !important;
+}
+
+/* ==== LOGO ==== */
+.logo-hover-toggle {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  transition: opacity 0.15s ease;
+  margin-left: 6px;
+  margin-top: 4px;
+}
+
+.logo-toggle-btn {
+  position: absolute;
+  inset: 0;
+  background: #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  transform: translateX(2px);
+  /* thay margin-left */
+}
+
+/* Hover logo khi thu nhỏ */
+#sidebar.sidebar-collapsed .logo-hover-toggle:hover .logo-img {
+  opacity: 0;
+}
+
+#sidebar.sidebar-collapsed .logo-hover-toggle:hover .logo-toggle-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Nút 3 gạch */
+.toggle-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+/* Thu nhỏ → ẩn nút 3 gạch */
+#sidebar.sidebar-collapsed .toggle-btn {
+  display: none !important;
+}
+
+/* ==== MENU ITEM ==== */
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+
+/* Icon wrapper → TRUNG TÂM ICON 100% như logo */
+.icon-wrap {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-wrap svg {
+  width: 20px !important;
+  height: 20px !important;
+  stroke-width: 1.8 !important;
+  stroke: #374151;
+  transition: stroke 0.2s ease, transform 0.15s ease;
+}
+
+/* Hover */
+.menu-item:hover .icon-wrap svg {
+  stroke: #2563eb !important;
+  transform: translateX(3px);
+}
+
+/* Active */
+.menu-item.active {
+  background: #eef2ff;
+  font-weight: 600;
+}
+
+.menu-item.active .icon-wrap svg {
+  stroke: #2563eb !important;
+  transform: none;
+}
+
+/* Thu nhỏ → căn icon giữa */
+#sidebar.sidebar-collapsed .menu-item {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+/* Thu nhỏ → không hover lệch */
+#sidebar.sidebar-collapsed .menu-item:hover .icon-wrap svg {
+  transform: none !important;
+}
+
+/* Thu nhỏ → logo cũng căn giữa như icon */
+#sidebar.sidebar-collapsed .logo-wrap {
+  justify-content: center !important;
+  padding-left: 0 !important;
+  margin-top: 3px;
+}
+
+#sidebar.sidebar-collapsed .logo-hover-toggle {
+  margin-left: 0 !important;
+}
+
+
+
+/* Tooltip */
+.tooltip {
+  position: fixed;
+  left: 80px;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: #000;
+  color: #fff;
+  border-radius: 6px;
+  opacity: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 999999;
+}
+
+/* Sidebar MỞ → không cho tooltip hiện */
+#sidebar:not(.sidebar-collapsed) .tooltip {
+  display: none !important;
+}
+
+
+
+#sidebar.sidebar-collapsed .menu-item:hover .tooltip {
+  opacity: 1;
+}
+
+/* Label size */
+.label {
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* Thu nhỏ sidebar → group-title thành dấu > */
+#sidebar.sidebar-collapsed .group-title {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+  /* ẩn chữ nhưng vẫn giữ block để hiện icon */
+  padding: 0 !important;
+  height: 24px;
+}
+
+/* Hiện dấu > */
+#sidebar.sidebar-collapsed .group-title::after {
+  content: "---";
+  font-size: 20px;
+  color: #6b7280;
+}
+
+@media (max-width: 768px) {
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 55vw;
+    max-width: 320px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+
+  #sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  #sidebar.sidebar-collapsed {
+    width: 80vw !important;
+  }
+
+  .tooltip {
+    display: none !important;
+  }
+}
+
+/* ================================
+   SOẠN VĂN BẢN – THEO TRẠNG THÁI SIDEBAR
+   ================================ */
+
+/* Mặc định: sidebar mở → icon + chữ */
+.soan-van-ban-btn {
+  justify-content: center;
+}
+
+/* Khi sidebar thu nhỏ */
+#sidebar.sidebar-collapsed .soan-van-ban-btn {
+  width: 40px;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
+}
+
+/* Ẩn chữ khi thu nhỏ */
+#sidebar.sidebar-collapsed .soan-label {
+  display: none;
+}
+
+/* ================================
+   TOOLTIP – SOẠN VĂN BẢN
+   ================================ */
+
+.soan-tooltip {
+  position: fixed;
+  left: 80px;
+  /* đứng bên phải icon */
+  margin-top: 25px;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: #000;
+  color: #fff;
+  border-radius: 6px;
+  opacity: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 999999;
+}
+
+/* Khi sidebar thu nhỏ + hover */
+#sidebar.sidebar-collapsed .soan-van-ban-btn:hover .soan-tooltip {
+  opacity: 1;
+}
+
+/* Khi sidebar mở → ẩn tooltip */
+#sidebar:not(.sidebar-collapsed) .soan-tooltip {
+  display: none;
+}
+
+/* =========================
+   CUSTOM SCROLLBAR – SIDEBAR
+   ========================= */
+
+#sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+#sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#sidebar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+#sidebar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+#sidebar {
+  scroll-behavior: smooth;
+}
+
+/* =========================
+   SIDEBAR FOOTER – STICKY
+   ========================= */
+
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  background: white;
+  padding: 12px;
+  border-top: 1px solid #e5e7eb;
+  z-index: 20;
+}

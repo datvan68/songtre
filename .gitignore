@@ -1,0 +1,47 @@
+# Environmental variables (Bảo mật credentials)
+.env
+
+# Secrets & Credentials (Bảo mật thông tin nhạy cảm của hệ thống)
+*service-account.json
+credentials.json
+client_secret.json
+smtp_secret.php
+public_html/config/smtp_secret.php
+
+# SQL Backups and dumps (Không đẩy các bản backup database khổng lồ lên Git)
+*.sql
+
+# User uploads & generated media (Không commit dữ liệu người dùng)
+public_html/uploads/
+uploads/
+
+# Large Archives (Không đẩy các file nén zip lớn gây nặng repository)
+*.zip
+*.rar
+*.tar.gz
+
+# Composer & Node Dependencies (Không đẩy thư mục thư viện bên thứ 3)
+vendor/
+node_modules/
+
+# Agent configuration (Bỏ qua cấu hình AI Agents và cache)
+.agents/
+.gemini/
+.antigravity/
+
+# Logs (Bỏ qua tệp log phát sinh khi vận hành)
+logs/
+*.log
+
+# System files (Bỏ qua tệp rác của hệ điều hành)
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Dev / temp / test artifacts (Không đưa vào production)
+public_html/test_*
+public_html/temp_*
+public_html/doanvien_export.csv
+public_html/controllers/db.php
+helper
+*.csv

@@ -1,0 +1,21 @@
+RewriteEngine On
+
+# =========================
+# 1. ROOT / → dashboard
+# =========================
+RewriteCond %{REQUEST_URI} ^/$
+RewriteRule ^$ index.php?p=dashboard [L,QSA]
+
+# =========================
+# 2. KHÔNG rewrite file & folder thật
+# =========================
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# =========================
+# 3. SPA fallback → index.php
+# =========================
+RewriteRule ^ index.php [QSA,L]
+
+AddDefaultCharset utf-8
