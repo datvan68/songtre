@@ -133,6 +133,11 @@ function auth_guard($roleName = null)
 
 function can(string $permCode, string $action = 'view'): bool
 {
+    // map approve/reject -> review (column is can_review)
+    if ($action === 'approve' || $action === 'reject') {
+        $action = 'review';
+    }
+
     // ADMIN BYPASS TẤT CẢ
     if (is_admin()) {
         return true;

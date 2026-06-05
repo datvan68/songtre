@@ -147,6 +147,9 @@ $oaValid = ($oaEnabled === 1 && $oaId !== '' && preg_match('/^\d+$/', $oaId));
     </div>
   </div>
 
+  <!-- GLOBAL CONFIRM MODAL (reusable for all confirmations, replaces native confirm()) -->
+  <?php include __DIR__ . '/confirm_modal.php'; ?>
+
   <script src="<?= BASE_URL ?>assets/js/action-guard.js"></script>
   <script src="<?= BASE_URL ?>assets/js/auth.js?v=<?= time() ?>"></script>
 
