@@ -26,11 +26,6 @@
                                 </a>
                             </div>
 
-                            <!-- RIGHT: WEEK RANGE -->
-                            <div id="dutyWeekRange" class="shrink-0 text-sm px-4 py-1.5 rounded-full
-                                    bg-orange-100 text-orange-700 font-medium whitespace-nowrap">
-                                --/-- - --/--
-                            </div>
                         </div>
                     </header>
 
@@ -58,11 +53,27 @@
 
                         <!-- DANH SÁCH THÀNH VIÊN MỚI - DẠNG BẢNG CHI TIẾT -->
                         <div class="mt-8">
-                            <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center justify-between mb-4 gap-4">
                                 <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
                                     👥 Bảng quản lý chi tiết thành viên
                                     <span id="memberCount" class="text-sm font-normal text-gray-500">(-- người)</span>
                                 </h3>
+
+                                <!-- BỘ CHỌN TUẦN TƯƠNG TÁC -->
+                                <div class="flex items-center gap-2 select-none shrink-0">
+                                    <button type="button" id="btnHeaderWeekPrev" class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl shadow-sm transition">
+                                        ◀ Tuần trước
+                                    </button>
+                                    <button type="button" id="btnHeaderWeekThis" class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl shadow-sm transition">
+                                        Tuần này
+                                    </button>
+                                    <button type="button" id="btnHeaderWeekNext" class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl shadow-sm transition">
+                                        Tuần sau ▶
+                                    </button>
+                                    <div id="dutyWeekRange" class="shrink-0 text-xs sm:text-sm px-4 py-1.5 rounded-xl bg-orange-100 text-orange-700 font-bold border border-orange-200 shadow-sm min-w-[140px] text-center" data-week-start="" data-week-end="">
+                                        --/-- - --/--
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- BỘ LỌC THÀNH VIÊN -->

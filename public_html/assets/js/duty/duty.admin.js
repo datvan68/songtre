@@ -1682,6 +1682,7 @@ function addDays(yyyy_mm_dd, days) {
 function updateWeekHeader(week) {
   const viewWrap = document.querySelector('[data-admin-view="view"]');
   const rangeEl = viewWrap?.querySelector("#dutyWeekRangeAdmin"); // <-- đổi id ở đây
+  const headerRangeEl = document.getElementById("dutyWeekRange");
 
   if (!week || !week.week_start) return;
 
@@ -1696,6 +1697,13 @@ function updateWeekHeader(week) {
     rangeEl.dataset.weekStart = start;
     rangeEl.dataset.weekEnd = end;
   }
+  
+  if (headerRangeEl) {
+    headerRangeEl.textContent = `${fmtDDMM(start)} - ${fmtDDMM(end)}`;
+    headerRangeEl.dataset.weekStart = start;
+    headerRangeEl.dataset.weekEnd = end;
+  }
+
   updateFilterShiftButtonLabel();
 
   for (let d = 2; d <= 6; d++) {
@@ -1751,6 +1759,10 @@ async function loadDutyViewSchedule(offset = VIEW_WEEK_OFFSET) {
 document.getElementById("btnWeekPrev")?.addEventListener("click", () => loadDutyViewSchedule(VIEW_WEEK_OFFSET - 1));
 document.getElementById("btnWeekThis")?.addEventListener("click", () => loadDutyViewSchedule(0));
 document.getElementById("btnWeekNext")?.addEventListener("click", () => loadDutyViewSchedule(VIEW_WEEK_OFFSET + 1));
+
+document.getElementById("btnHeaderWeekPrev")?.addEventListener("click", () => loadDutyViewSchedule(VIEW_WEEK_OFFSET - 1));
+document.getElementById("btnHeaderWeekThis")?.addEventListener("click", () => loadDutyViewSchedule(0));
+document.getElementById("btnHeaderWeekNext")?.addEventListener("click", () => loadDutyViewSchedule(VIEW_WEEK_OFFSET + 1));
 
 function renderAdminDutyView(rows = []) {
   DUTY_CURRENT_SCHEDULE = rows;
