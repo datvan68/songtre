@@ -12,13 +12,18 @@
                     <header class="mb-6">
                         <div class="flex items-center justify-between gap-4">
                             <!-- LEFT: TITLE -->
-                            <div>
-                                <h1 class="text-2xl font-bold text-gray-800">
-                                    QUẢN LÝ LỊCH TRỰC BAN CHẤP HÀNH
-                                </h1>
-                                <p class="text-sm text-gray-500 mt-1">
-                                    Quản lý, xếp lịch trực theo tuần
-                                </p>
+                            <div class="flex items-center gap-3">
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">
+                                        QUẢN LÝ LỊCH TRỰC BAN CHẤP HÀNH
+                                    </h1>
+                                    <p class="text-sm text-gray-500 mt-1">
+                                        Quản lý, xếp lịch trực theo tuần
+                                    </p>
+                                </div>
+                                <a href="index.php?p=duty&view=user" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold rounded-xl border border-blue-200 shadow-sm transition-all duration-200">
+                                    Giao diện cá nhân
+                                </a>
                             </div>
 
                             <!-- RIGHT: WEEK RANGE -->
@@ -42,10 +47,6 @@
                                 data-admin-tab="assign">
                                 Xếp lịch
                             </button>
-
-                            <button class="duty-admin-tab text-gray-600 hover:text-blue-600 pb-2" data-admin-tab="view">
-                                Xem lịch
-                            </button>
                         </nav>
                     </div>
 
@@ -55,45 +56,104 @@
                     <!-- ===== TAB: OVERVIEW ===== -->
                     <div data-admin-view="overview">
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-
-                            <div class="p-4 rounded-lg bg-blue-50 border">
-                                <p class="text-sm text-gray-500">Tổng BCH</p>
-                                <p class="text-2xl font-bold text-blue-700" id="statTotal">
-                                    -- người
-                                </p>
-                            </div>
-
-                            <div class="p-4 rounded-lg bg-green-50 border">
-                                <p class="text-sm text-gray-500">Đã đăng ký lịch rảnh</p>
-                                <p class="text-2xl font-bold text-green-700" id="statRegistered">
-                                    -- người
-                                </p>
-                            </div>
-
-                            <div class="p-4 rounded-lg bg-amber-50 border">
-                                <p class="text-sm text-gray-500">Chưa đăng ký</p>
-                                <p class="text-2xl font-bold text-amber-700" id="statUnregistered">
-                                    -- người
-                                </p>
-                            </div>
-
-                        </div>
-                        <!-- DANH SÁCH THÀNH VIÊN MỚI - ĐÃ THIẾT KẾ LẠI -->
+                        <!-- DANH SÁCH THÀNH VIÊN MỚI - DẠNG BẢNG CHI TIẾT -->
                         <div class="mt-8">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                                    👥 Danh sách thành viên
+                                    👥 Bảng quản lý chi tiết thành viên
                                     <span id="memberCount" class="text-sm font-normal text-gray-500">(-- người)</span>
                                 </h3>
+                            </div>
 
-                                <div class="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
-                                    Click card hoặc tick để chọn xếp lịch
+                            <!-- BỘ LỌC THÀNH VIÊN -->
+                            <div class="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-200">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tìm kiếm</label>
+                                    <input type="text" id="filterMemberSearch" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Tìm tên / username...">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Trạng thái rảnh</label>
+                                    <select id="filterMemberStatus" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                        <option value="all">Tất cả thành viên</option>
+                                        <option value="has_free">Có đăng ký rảnh (> 0 buổi)</option>
+                                        <option value="no_free">Chưa đăng ký rảnh (0 buổi)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Thời gian rảnh cụ thể</label>
+                                    <button type="button" id="btnFilterShiftModal" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white hover:bg-gray-50 flex items-center justify-between text-gray-700 transition">
+                                        <span id="filterShiftLabel" class="text-gray-500">Chọn ca rảnh...</span>
+                                        <span class="text-xs text-gray-400">📅</span>
+                                    </button>
                                 </div>
                             </div>
 
-                            <div id="dutyMemberList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <!-- JS sẽ render card mới ở đây -->
+                            <div class="overflow-x-auto bg-white rounded-2xl border border-gray-200 shadow-sm">
+                                <table class="w-full text-sm border-collapse text-left">
+                                    <thead class="bg-gray-50 border-b border-gray-200">
+                                        <tr class="text-gray-700 font-semibold">
+                                            <th class="px-6 py-4 w-12 text-center">
+                                                <input type="checkbox" id="selectAllMemberTable" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
+                                            </th>
+                                            <th class="px-6 py-4">Thành viên</th>
+                                            <th class="px-6 py-4 text-center">Số buổi rảnh</th>
+                                            <th class="px-6 py-4">Lịch trực đã xếp</th>
+                                            <th class="px-6 py-4 text-center">Thao tác</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dutyMemberListTable" class="divide-y divide-gray-200">
+                                        <!-- JS sẽ render hàng thành viên ở đây -->
+                                    </tbody>
+                                </table>
+
+                                <!-- PHÂN TRANG CHO BẢNG THÀNH VIÊN -->
+                                <div class="px-6 py-4 flex flex-col sm:flex-row items-center justify-between border-t border-gray-200 bg-gray-50 gap-3" id="dutyMemberPagination">
+                                    <div class="flex items-center gap-4">
+                                        <div class="text-xs text-gray-500 font-medium">
+                                            Hiển thị <span id="pagStart" class="font-bold text-gray-700">0</span>-<span id="pagEnd" class="font-bold text-gray-700">0</span> của <span id="pagTotal" class="font-bold text-gray-700">0</span>
+                                        </div>
+                                        <div class="flex items-center gap-1.5 text-xs text-gray-500 font-medium border-l pl-4">
+                                            <span>Mỗi trang:</span>
+                                            <select id="pagLimit" class="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold text-gray-700 cursor-pointer">
+                                                <option value="10">10</option>
+                                                <option value="20" selected>20</option>
+                                                <option value="50">50</option>
+                                                <option value="100">100</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" id="btnPagPrev" class="px-3 py-1 text-xs border rounded-lg bg-white hover:bg-gray-50 font-semibold disabled:opacity-50 transition">Trước</button>
+                                        <div id="pagPages" class="flex gap-1">
+                                            <!-- Các nút số trang hiển thị tại đây -->
+                                        </div>
+                                        <button type="button" id="btnPagNext" class="px-3 py-1 text-xs border rounded-lg bg-white hover:bg-gray-50 font-semibold disabled:opacity-50 transition">Sau</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- THỐNG KÊ (DỜI XUỐNG DƯỚI BẢNG) -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                            <div class="p-4 rounded-xl bg-blue-50 border border-blue-100 shadow-sm">
+                                <p class="text-sm text-gray-500">Tổng BCH</p>
+                                <p class="text-2xl font-bold text-blue-700 mt-1" id="statTotal">
+                                    -- người
+                                </p>
+                            </div>
+
+                            <div class="p-4 rounded-xl bg-green-50 border border-green-100 shadow-sm">
+                                <p class="text-sm text-gray-500">Đã đăng ký lịch rảnh</p>
+                                <p class="text-2xl font-bold text-green-700 mt-1" id="statRegistered">
+                                    -- người
+                                </p>
+                            </div>
+
+                            <div class="p-4 rounded-xl bg-amber-50 border border-amber-100 shadow-sm">
+                                <p class="text-sm text-gray-500">Chưa đăng ký</p>
+                                <p class="text-2xl font-bold text-amber-700 mt-1" id="statUnregistered">
+                                    -- người
+                                </p>
                             </div>
                         </div>
 
@@ -102,22 +162,152 @@
                     <!-- ===== TAB: ASSIGN ===== -->
                     <div data-admin-view="assign" class="hidden space-y-6">
 
+                        <!-- CHỌN THÀNH VIÊN XẾP LỊCH -->
+                        <div class="p-6 rounded-2xl border border-gray-200 bg-white shadow-sm space-y-4">
+                            <div class="flex items-center justify-between border-b pb-3">
+                                <h4 class="text-md font-bold text-gray-800 flex items-center gap-2">
+                                    👥 Chọn thành viên tham gia trực tuần
+                                    <span id="assignMemberCount" class="text-sm font-normal text-gray-500">(-- người)</span>
+                                </h4>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" id="btnSelectAllAssign" class="text-xs px-2.5 py-1.5 rounded-lg border bg-gray-50 hover:bg-gray-100 font-medium">Chọn tất cả</button>
+                                    <button type="button" id="btnUnselectAllAssign" class="text-xs px-2.5 py-1.5 rounded-lg border bg-gray-50 hover:bg-gray-100 font-medium">Bỏ chọn</button>
+                                </div>
+                            </div>
+                            
+                            <div id="dutyAssignMemberList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[300px] overflow-y-auto p-1">
+                                <!-- JS sẽ render checklist thành viên ở đây -->
+                            </div>
+                        </div>
+
+                        <!-- BẢNG XEM LỊCH TRỰC VÀ ĐIỀU CHỈNH KÉO THẢ (LỒNG VÀO TAB XẾP LỊCH) -->
+                        <div class="mt-8 border-t pt-6 space-y-4">
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <h3 class="text-lg font-semibold text-gray-800">Lịch trực tuần</h3>
+
+                                    <div class="block items-center gap-2">
+                                        <button id="btnWeekPrev"
+                                            class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
+                                            Tuần trước
+                                        </button>
+
+                                        <button id="btnWeekThis"
+                                            class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
+                                            Tuần này
+                                        </button>
+
+                                        <button id="btnWeekNext"
+                                            class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
+                                            Tuần sau
+                                        </button>
+
+                                        <div id="dutyWeekRangeAdmin"
+                                            class="ml-2 px-3 py-2 rounded-lg border text-sm font-medium bg-white text-center">
+                                            --/-- → --/--
+                                        </div>
+                                        <div id="dutyTrash"
+                                            class="hidden fixed bottom-4 right-4 z-50 w-48 h-14 rounded-xl border-2 border-dashed border-red-500 bg-white
+             flex items-center justify-center text-sm font-semibold text-red-600 shadow-sm select-none pointer-events-none">
+                                            Kéo vào đây để xoá
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-2.5 export-hide items-center">
+                                    <button id="btnExportImg"
+                                        class="px-5 py-2.5 rounded-xl bg-gray-200 border text-sm font-bold text-gray-700 hover:bg-gray-100 transition shadow-sm">
+                                        Xuất ảnh
+                                    </button>
+                                    <button id="btnExportPdf"
+                                        class="px-5 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition shadow-sm">
+                                        Xuất PDF
+                                    </button>
+                                    <button id="btnGenerateWeek" class="px-5 py-2.5 rounded-xl font-bold text-white text-sm
+                                            bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600
+                                            hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700
+                                            shadow-md hover:shadow-lg
+                                            active:scale-95
+                                            transition-all duration-200 flex items-center gap-2">
+                                        ⚡ Xếp lịch tuần này
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- BANNER CHẾ ĐỘ NHÁP (MẶC ĐỊNH ẨN) -->
+                            <div id="dutyDraftBanner" class="hidden p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm transition-all duration-200">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">⚠️</span>
+                                    <div>
+                                        <div class="font-bold text-sm">Chế độ Xem trước Lịch gợi ý (Nháp)</div>
+                                        <div class="text-xs text-amber-700">Mọi chỉnh sửa kéo thả/thêm/xóa hiện tại chỉ lưu trên RAM. Nhấn <b>Lưu chính thức</b> để áp dụng vào hệ thống.</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <button type="button" id="btnCancelDraft" class="px-3 py-1.5 rounded-lg border border-amber-300 bg-white hover:bg-amber-50 text-xs font-semibold text-amber-800 transition">
+                                        Hủy nháp
+                                    </button>
+                                    <button type="button" id="btnSaveDraft" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow transition">
+                                        💾 Lưu chính thức
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <div class="duty-export-target bg-white rounded-2xl border-2 border-gray-300 shadow-sm overflow-hidden">
+                                    <div class="overflow-x-auto">
+                                        <table class="min-w-[900px] w-full text-sm border-collapse">
+                                            <thead class="bg-gray-50 border-b border-gray-200">
+                                                <tr class="text-gray-700 font-semibold">
+                                                    <th class="w-[160px] text-center px-3 py-3 border border-gray-200 bg-gray-50 font-bold">
+                                                        Ca
+                                                    </th>
+                                                    <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50" data-day="2">
+                                                        <div class="font-bold">T2</div>
+                                                        <div class="text-xs text-gray-500" id="date-2">--/--</div>
+                                                    </th>
+                                                    <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50" data-day="3">
+                                                        <div class="font-bold">T3</div>
+                                                        <div class="text-xs text-gray-500" id="date-3">--/--</div>
+                                                    </th>
+                                                    <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50" data-day="4">
+                                                        <div class="font-bold">T4</div>
+                                                        <div class="text-xs text-gray-500" id="date-4">--/--</div>
+                                                    </th>
+                                                    <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50" data-day="5">
+                                                        <div class="font-bold">T5</div>
+                                                        <div class="text-xs text-gray-500" id="date-5">--/--</div>
+                                                    </th>
+                                                    <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50" data-day="6">
+                                                        <div class="font-bold">T6</div>
+                                                        <div class="text-xs text-gray-500" id="date-6">--/--</div>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="dutyViewTable">
+                                                <!-- JS render -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="px-4 py-3 border-t border-gray-200 bg-gray-50 flex flex-wrap gap-6 text-sm text-gray-700">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-3 h-3 rounded bg-green-200 border border-green-400"></span>
+                                            Trực thường
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-3 h-3 rounded bg-orange-200 border border-orange-400"></span>
+                                            Trực giờ ra chơi
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- HEADER -->
-                        <div class="flex items-center justify-between">
+                        <div class="border-t pt-6 mt-8">
                             <h3 class="text-lg font-semibold text-gray-800">
                                 📊 Thống kê thời gian rảnh
                             </h3>
-
-                            <button id="btnGenerateWeek" class="px-5 py-2.5 rounded-xl font-semibold text-white
-                                    bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600
-                                    hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700
-                                    shadow-md hover:shadow-xl
-                                    active:scale-95
-                                    transition-all duration-200 flex items-center gap-2">
-                                ⚡ Xếp lịch tuần này
-                            </button>
-
-
                         </div>
 
                         <!-- GRID STATS -->
@@ -156,128 +346,6 @@
                             <p>• <strong>Không xếp ca sáng / chiều</strong> cho người đang có lịch học (chỉ có thể
                                 trực
                                 ra chơi)</p>
-                        </div>
-
-
-                    </div>
-
-
-                    <!-- ===== TAB: VIEW ===== -->
-                    <div data-admin-view="view" class="hidden">
-
-                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3">
-                                <h3 class="text-lg font-semibold text-gray-800">Lịch trực tuần</h3>
-
-                                <div class="block items-center gap-2">
-                                    <button id="btnWeekPrev"
-                                        class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
-                                        Tuần trước
-                                    </button>
-
-                                    <button id="btnWeekThis"
-                                        class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
-                                        Tuần này
-                                    </button>
-
-                                    <button id="btnWeekNext"
-                                        class="px-3 py-2 rounded-lg border bg-white text-sm hover:bg-gray-50">
-                                        Tuần sau
-                                    </button>
-
-                                    <div id="dutyWeekRangeAdmin"
-                                        class="ml-2 px-3 py-2 rounded-lg border text-sm font-medium bg-white text-center">
-                                        --/-- → --/--
-                                    </div>
-                                    <div id="dutyTrash"
-                                        class="hidden fixed bottom-4 right-4 z-50 w-48 h-14 rounded-xl border-2 border-dashed border-red-500 bg-white
-         flex items-center justify-center text-sm font-semibold text-red-600 shadow-sm select-none pointer-events-none">
-                                        Kéo vào đây để xoá
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex gap-2 export-hide">
-                                <button id="btnExportImg"
-                                    class="px-4 py-2 rounded-lg bg-gray-200 border text-sm font-medium hover:bg-gray-100 transition">
-                                    Xuất ảnh
-                                </button>
-                                <button id="btnExportPdf"
-                                    class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition">
-                                    Xuất PDF
-                                </button>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <!-- ✅ KHUNG BẢNG (border đậm hơn, nhìn “đóng khung”) -->
-                            <div
-                                class="duty-export-target bg-white rounded-2xl border-2 border-gray-300 shadow-sm overflow-hidden">
-
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-[900px] w-full text-sm border-collapse">
-
-                                        <!-- ✅ HEADER -->
-                                        <thead class="bg-white sticky top-0 z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]">
-                                            <tr class="text-gray-700">
-                                                <!-- cột CA -->
-                                                <th
-                                                    class="w-[160px] text-center px-3 py-3 border border-gray-200 bg-gray-50 font-bold">
-                                                    Ca
-                                                </th>
-
-                                                <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50"
-                                                    data-day="2">
-                                                    <div class="font-bold">T2</div>
-                                                    <div class="text-xs text-gray-500" id="date-2">--/--</div>
-                                                </th>
-
-                                                <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50"
-                                                    data-day="3">
-                                                    <div class="font-bold">T3</div>
-                                                    <div class="text-xs text-gray-500" id="date-3">--/--</div>
-                                                </th>
-
-                                                <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50"
-                                                    data-day="4">
-                                                    <div class="font-bold">T4</div>
-                                                    <div class="text-xs text-gray-500" id="date-4">--/--</div>
-                                                </th>
-
-                                                <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50"
-                                                    data-day="5">
-                                                    <div class="font-bold">T5</div>
-                                                    <div class="text-xs text-gray-500" id="date-5">--/--</div>
-                                                </th>
-
-                                                <th class="text-center px-3 py-3 border border-gray-200 bg-gray-50"
-                                                    data-day="6">
-                                                    <div class="font-bold">T6</div>
-                                                    <div class="text-xs text-gray-500" id="date-6">--/--</div>
-                                                </th>
-                                            </tr>
-                                        </thead>
-
-                                        <!-- ✅ BODY -->
-                                        <tbody id="dutyViewTable">
-                                            <!-- JS render -->
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <!-- ✅ CHÚ THÍCH (đóng khung luôn cho đẹp) -->
-                                <div
-                                    class="px-4 py-3 border-t border-gray-200 bg-gray-50 flex flex-wrap gap-6 text-sm text-gray-700">
-                                    <div class="flex items-center gap-2">
-                                        <span class="w-3 h-3 rounded bg-green-200 border border-green-400"></span>
-                                        Trực thường
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="w-3 h-3 rounded bg-orange-200 border border-orange-400"></span>
-                                        Trực giờ ra chơi
-                                    </div>
-                                </div>
-
-                            </div>
                         </div>
 
                     </div>

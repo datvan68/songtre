@@ -1,5 +1,14 @@
 let SELECTED_DUTY_USER_IDS = [];
+let DUTY_DRAFT_MODE = false;
+let DUTY_DRAFT_SCHEDULE = [];
 let DUTY_MEMBERS_CACHE = []; // [{id, fullname, username, free_count, avatar_url}]
+let DUTY_AVAILABILITY_MATRIX = {};
+let DUTY_CURRENT_SCHEDULE = [];
+let FILTER_SELECTED_SHIFTS = [];
+let DUTY_MEMBER_PAGE = 1;
+let DUTY_MEMBER_LIMIT = 20;
+let DUTY_CURRENT_WEEK_START = "";
+let DUTY_CURRENT_WEEK_END = "";
 // ===== BULK SELECT (DUTY VIEW) =====
 let DUTY_BULK_SELECTED = new Map(); // key -> {user_id, day, shift}
 
@@ -136,21 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const isRegen = btnGenerate.dataset.mode === "regenerate";
-
-      const title = isRegen ? "Xác nhận xếp lại lịch" : "Xác nhận xếp lịch";
-      const message = isRegen
-        ? "⚠️ Tuần này đã có lịch. Xếp lại sẽ ghi đè toàn bộ lịch cũ. Bạn có chắc chắn không?"
-        : "Bạn có chắc muốn xếp lịch trực cho tuần này không?";
-
-      const confirmText = isRegen ? "Xếp lại lịch" : "Xếp lịch";
-      const confirmClass = isRegen
-        ? "bg-red-600 hover:bg-red-700"
-        : "bg-blue-600 hover:bg-blue-700";
-
       modal(`
       <div class="text-center space-y-4">
-        <p class="text-gray-700">${message}</p>
+        <p class="text-gray-700">Bạn có chắc muốn chạy gợi ý xếp lịch trực cho tuần này không? Hệ thống sẽ tạo một bản nháp gợi ý để bạn xem trước và chỉnh sửa thoải mái trước khi lưu chính thức.</p>
 
         <div class="flex justify-center gap-3">
           <button
@@ -164,12 +161,12 @@ document.addEventListener('DOMContentLoaded', () => {
             type="button"
             id="confirmGenerateWeekBtn"
             data-primary
-            class="px-4 py-2 rounded-lg text-white ${confirmClass}">
-            ${confirmText}
+            class="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700">
+            Tạo gợi ý nháp
           </button>
         </div>
       </div>
-    `, title, "small");
+    `, "Gợi ý lịch trực tuần", "small");
 
       const confirmBtn = document.getElementById("confirmGenerateWeekBtn");
       if (!confirmBtn) return;
@@ -180,12 +177,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const original = confirmBtn.textContent;
         confirmBtn.disabled = true;
-        confirmBtn.textContent = "Đang xếp lịch...";
+        confirmBtn.textContent = "Đang chạy thuật toán...";
 
         try {
           const q = getAdminNextWeekQuery();
 
-          const res = await fetch(`${DUTY_API}?action=generate_week&${q}`, {
+          const res = await fetch(`${DUTY_API}?action=suggest_week&${q}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_ids: SELECTED_DUTY_USER_IDS })
@@ -194,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const json = await res.json();
 
           if (!json.ok) {
-            toast(json.error || "Xếp lịch thất bại", "error");
+            toast(json.error || "Gợi ý lịch thất bại", "error");
             confirmBtn.disabled = false;
             confirmBtn.textContent = original;
             generatingWeek = false;
@@ -202,12 +199,17 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           closeModal();
-          toast("✅ Đã xếp lịch tuần sau thành công", "success");
+          toast("✅ Đã tạo lịch trực gợi ý (Nháp) thành công", "success");
 
-          loadAdminOverview();
-          loadFreeStats();
-          // ✅ reload đúng tuần đang xem (đừng gọi loadViewSchedule cũ)
-          loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+          // Kích hoạt chế độ nháp
+          DUTY_DRAFT_MODE = true;
+          DUTY_DRAFT_SCHEDULE = Array.isArray(json.data.assignments) ? json.data.assignments : [];
+
+          const banner = document.getElementById("dutyDraftBanner");
+          if (banner) banner.classList.remove("hidden");
+
+          // Render lịch nháp lên bảng xem
+          renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
 
         } catch (e) {
           console.error(e);
@@ -220,6 +222,54 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     });
   }
+
+  // Event handlers cho banner nháp
+  document.getElementById("btnCancelDraft")?.addEventListener("click", () => {
+    DUTY_DRAFT_MODE = false;
+    DUTY_DRAFT_SCHEDULE = [];
+    document.getElementById("dutyDraftBanner")?.classList.add("hidden");
+    toast("Đã hủy bản nháp", "info");
+    loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+  });
+
+  document.getElementById("btnSaveDraft")?.addEventListener("click", async () => {
+    const btnSave = document.getElementById("btnSaveDraft");
+    if (!btnSave || btnSave.disabled) return;
+
+    btnSave.disabled = true;
+    const originalText = btnSave.textContent;
+    btnSave.textContent = "Đang lưu...";
+
+    try {
+      const q = getAdminNextWeekQuery();
+      const res = await fetch(`${DUTY_API}?action=save_week_schedule&${q}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: DUTY_DRAFT_SCHEDULE })
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        toast(json.error || "Không thể lưu lịch trực", "error");
+        btnSave.disabled = false;
+        btnSave.textContent = originalText;
+        return;
+      }
+
+      toast("✅ Đã lưu lịch trực chính thức thành công!", "success");
+      DUTY_DRAFT_MODE = false;
+      DUTY_DRAFT_SCHEDULE = [];
+      document.getElementById("dutyDraftBanner")?.classList.add("hidden");
+
+      loadAdminOverview();
+      loadFreeStats();
+      loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+    } catch (err) {
+      console.error(err);
+      toast("❌ Lỗi lưu lịch trực", "error");
+      btnSave.disabled = false;
+      btnSave.textContent = originalText;
+    }
+  });
 
 
   /* ==========================
@@ -268,8 +318,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // hook load data
     if (tab === 'assign') {
       loadFreeStats();
-    }
-    if (tab === 'view') {
       loadDutyViewSchedule(VIEW_WEEK_OFFSET);
     }
 
@@ -289,7 +337,10 @@ document.addEventListener('DOMContentLoaded', () => {
      INIT TAB FROM URL
   ========================== */
   const params = new URLSearchParams(window.location.search);
-  const initTab = params.get('tab') || 'overview';
+  let initTab = params.get('tab') || 'overview';
+  if (initTab === 'view') {
+    initTab = 'assign';
+  }
 
   showAdminTab(initTab, false);
 
@@ -298,9 +349,75 @@ document.addEventListener('DOMContentLoaded', () => {
      LOAD OVERVIEW (ADMIN)
   ========================== */
 
-  loadAdminOverview();
-  loadDutyMembers();
   loadDutyViewSchedule(1);
+
+  document.getElementById("btnSelectAllAssign")?.addEventListener("click", () => {
+    document.querySelectorAll("#dutyAssignMemberList .duty-member-checkbox").forEach(cb => cb.checked = true);
+    document.querySelectorAll("#dutyMemberListTable .duty-member-table-checkbox").forEach(cb => cb.checked = true);
+    updateSelectAllHeaderState();
+  });
+  document.getElementById("btnUnselectAllAssign")?.addEventListener("click", () => {
+    document.querySelectorAll("#dutyAssignMemberList .duty-member-checkbox").forEach(cb => cb.checked = false);
+    document.querySelectorAll("#dutyMemberListTable .duty-member-table-checkbox").forEach(cb => cb.checked = false);
+    updateSelectAllHeaderState();
+  });
+
+  // Lắng nghe sự thay đổi của bộ lọc thành viên
+  document.getElementById("filterMemberSearch")?.addEventListener("input", () => {
+    DUTY_MEMBER_PAGE = 1;
+    renderDutyMemberListTable();
+  });
+  document.getElementById("filterMemberStatus")?.addEventListener("change", () => {
+    DUTY_MEMBER_PAGE = 1;
+    renderDutyMemberListTable();
+  });
+  document.getElementById("btnFilterShiftModal")?.addEventListener("click", openFilterShiftModal);
+
+  // Lọc số lượng hiển thị (Pagination limit)
+  document.getElementById("pagLimit")?.addEventListener("change", (e) => {
+    DUTY_MEMBER_LIMIT = parseInt(e.target.value) || 20;
+    DUTY_MEMBER_PAGE = 1;
+    renderDutyMemberListTable();
+  });
+
+  // Checkbox chọn tất cả trên bảng (chỉ áp dụng cho trang hiện tại)
+  document.getElementById("selectAllMemberTable")?.addEventListener("change", (e) => {
+    const isChecked = e.target.checked;
+    document.querySelectorAll("#dutyMemberListTable .duty-member-table-checkbox").forEach(cb => {
+      cb.checked = isChecked;
+      const uid = cb.value;
+      const assignCb = document.querySelector(`#dutyAssignMemberList .duty-member-checkbox[value="${uid}"]`);
+      if (assignCb) {
+        assignCb.checked = isChecked;
+      }
+    });
+  });
+
+  // Delegation cho checkbox trên từng hàng của bảng thành viên
+  document.getElementById("dutyMemberListTable")?.addEventListener("change", (e) => {
+    if (e.target.classList.contains("duty-member-table-checkbox")) {
+      const uid = e.target.value;
+      const isChecked = e.target.checked;
+      const assignCb = document.querySelector(`#dutyAssignMemberList .duty-member-checkbox[value="${uid}"]`);
+      if (assignCb) {
+        assignCb.checked = isChecked;
+      }
+      updateSelectAllHeaderState();
+    }
+  });
+
+  // Delegation cho checkbox trên checklist xếp lịch (tab Xếp lịch)
+  document.getElementById("dutyAssignMemberList")?.addEventListener("change", (e) => {
+    if (e.target.classList.contains("duty-member-checkbox")) {
+      const uid = e.target.value;
+      const isChecked = e.target.checked;
+      const tableCb = document.querySelector(`#dutyMemberListTable .duty-member-table-checkbox[value="${uid}"]`);
+      if (tableCb) {
+        tableCb.checked = isChecked;
+      }
+      updateSelectAllHeaderState();
+    }
+  });
 
 });
 
@@ -358,125 +475,720 @@ async function loadDutyMembers() {
     if (!json.ok) return;
     DUTY_MEMBERS_CACHE = Array.isArray(json.data) ? json.data : [];
 
-    // 2. Lấy toàn bộ lịch trực tuần này (để hiển thị mini schedule)
-    const resSchedule = await fetch(`${DUTY_API}?action=get_week_schedule&${q}`);
-    const jsonSchedule = await resSchedule.json();
+    // --- RENDER BẢNG CHI TIẾT (TAB: OVERVIEW) ---
+    renderDutyMemberListTable();
 
-    // Tạo map: user_id → mảng lịch trực
-    const userSchedule = {};
-    if (jsonSchedule.ok && Array.isArray(jsonSchedule.data)) {
-      jsonSchedule.data.forEach(item => {
-        const uid = Number(item.user_id);
-        if (!userSchedule[uid]) userSchedule[uid] = [];
-        userSchedule[uid].push({
-          day: item.day,      // T2, T3...
-          shift: item.shift   // sang, chieu, rachoi_s, rachoi_c
-        });
+    // --- RENDER CHECKLIST (TAB: ASSIGN) ---
+    const assignBox = document.getElementById("dutyAssignMemberList");
+    const assignCountEl = document.getElementById("assignMemberCount");
+    if (assignBox) {
+      assignBox.innerHTML = "";
+      if (assignCountEl) assignCountEl.textContent = `(${DUTY_MEMBERS_CACHE.length} người)`;
+
+      DUTY_MEMBERS_CACHE.forEach(u => {
+        const uid = Number(u.id);
+        const name = u.fullname || u.username || "Không tên";
+        const free = Number(u.free_count || 0);
+
+        assignBox.insertAdjacentHTML("beforeend", `
+          <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer select-none transition justify-between">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <input type="checkbox" class="duty-member-checkbox w-5 h-5 accent-blue-600 rounded-lg shrink-0" value="${uid}" checked>
+              <div class="flex flex-col min-w-0">
+                <span class="text-sm font-semibold text-gray-700 truncate">${name}</span>
+                <span class="text-[11px] text-gray-500 font-normal mt-0.5">Rảnh: ${free} buổi</span>
+              </div>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium ${free > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'} shrink-0">
+              ${free} buổi rảnh
+            </span>
+          </label>
+        `);
       });
     }
-
-    const box = document.getElementById("dutyMemberList");
-    const countEl = document.getElementById("memberCount");
-    if (!box) return;
-
-    box.innerHTML = "";
-    countEl.textContent = `(${json.data.length} người)`;
-
-    json.data.forEach(u => {
-      const uid = Number(u.id);
-      const name = u.fullname || u.username || "Không tên";
-      const username = u.username ? `@${u.username}` : "";
-      const free = Number(u.free_count || 0);
-      const schedule = userSchedule[uid] || [];
-
-                  // === MINI LỊCH TRỰC - FONT TO HƠN (T2-S, T3-C, T4-RS) ===
-            let scheduleHTML = '';
-            
-            if (schedule.length > 0) {
-                // Sắp xếp theo thứ tự T2 → T6
-                const sorted = [...schedule].sort((a, b) => {
-                    return parseInt(a.day.replace('T','')) - parseInt(b.day.replace('T',''));
-                });
-
-                scheduleHTML = `<div class="flex flex-wrap gap-1.5 mt-3">`;
-                
-                sorted.forEach(s => {
-                    let label = '';
-                    let colorClass = 'emerald';
-
-                    if (s.shift === "sang") {
-                        label = "S";
-                        colorClass = "emerald";     // Xanh
-                    } else if (s.shift === "chieu") {
-                        label = "C";
-                        colorClass = "violet";      // Tím
-                    } else if (s.shift === "rachoi_s") {
-                        label = "RS";
-                        colorClass = "amber";       // Cam
-                    } else if (s.shift === "rachoi_c") {
-                        label = "RC";
-                        colorClass = "amber";
-                    }
-
-                    scheduleHTML += `
-                        <span class="text-xs px-3 py-1 rounded font-semibold 
-                                     bg-${colorClass}-100 text-${colorClass}-700 border border-${colorClass}-200">
-                            ${s.day}-${label}
-                        </span>`;
-                });
-                
-                scheduleHTML += `</div>`;
-            } else {
-                scheduleHTML = `<div class="text-xs text-gray-400 mt-3 italic">Chưa có lịch trực</div>`;
-            }
-
-      const cardHTML = `
-                <label class="group relative flex flex-col p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer
-                              ${free === 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'}">
-
-                    <!-- Checkbox lớn -->
-                    <input type="checkbox" 
-                           class="duty-member-checkbox absolute top-4 right-4 w-6 h-6 accent-blue-600 rounded-xl"
-                           value="${uid}">
-
-                    <!-- Avatar + Info -->
-                    <div class="flex items-center gap-4">
-                        <div class="w-14 h-14 flex-shrink-0 rounded-2xl overflow-hidden border-2 border-white shadow">
-                            ${u.avatar_url ?
-          `<img src="${u.avatar_url}" class="w-full h-full object-cover">` :
-          `<div class="w-full h-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-bold">
-                                    ${name.charAt(0).toUpperCase()}
-                                 </div>`
-        }
-                        </div>
-
-                        <div class="flex-1 min-w-0">
-                            <div class="font-semibold text-lg text-gray-800 truncate">${name}</div>
-                            <div class="text-sm text-gray-500">${username}</div>
-                            
-                            <div class="mt-2 flex items-center gap-2">
-                                <span class="text-xs font-medium px-3 py-1 rounded-full 
-                                    ${free > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
-                                    ${free} buổi rảnh
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Mini lịch trực -->
-                    ${scheduleHTML}
-                </label>
-            `;
-
-      box.insertAdjacentHTML("beforeend", cardHTML);
-    });
-
-    // Giữ nguyên chức năng checkbox cho việc generate week
-    // (không cần thêm code vì class .duty-member-checkbox vẫn như cũ)
 
   } catch (e) {
     console.error("[DUTY MEMBER LIST ERROR]", e);
   }
+}
+
+function renderDutyMemberListTable() {
+  const tableBody = document.getElementById("dutyMemberListTable");
+  const countEl = document.getElementById("memberCount");
+  if (!tableBody) return;
+
+  const searchVal = (document.getElementById("filterMemberSearch")?.value || "").trim().toLowerCase();
+  const statusVal = document.getElementById("filterMemberStatus")?.value || "all";
+  const shiftVal = document.getElementById("filterMemberShift")?.value || "all";
+
+  // Lọc dữ liệu
+  const filtered = DUTY_MEMBERS_CACHE.filter(u => {
+    // 1. Lọc tìm kiếm tên / username
+    const name = (u.fullname || "").toLowerCase();
+    const username = (u.username || "").toLowerCase();
+    if (searchVal && !name.includes(searchVal) && !username.includes(searchVal)) {
+      return false;
+    }
+
+    // 2. Lọc theo trạng thái rảnh
+    const free = Number(u.free_count || 0);
+    if (statusVal === "has_free" && free === 0) return false;
+    if (statusVal === "no_free" && free > 0) return false;
+
+    // 3. Lọc theo ca rảnh cụ thể (bất kỳ ca nào trong mảng FILTER_SELECTED_SHIFTS được chọn)
+    if (FILTER_SELECTED_SHIFTS.length > 0) {
+      const userMatrix = DUTY_AVAILABILITY_MATRIX[u.id] || { availability: [], study: [] };
+      const isFreeAny = FILTER_SELECTED_SHIFTS.some(shiftVal => {
+        const parts = shiftVal.split("-");
+        const dayNum = parseInt(parts[0]);
+        const shiftName = parts[1];
+        return userMatrix.availability.some(a => a.day === dayNum && a.shift === shiftName);
+      });
+      if (!isFreeAny) return false;
+    }
+
+    return true;
+  });
+
+  // Phân trang
+  const totalItems = filtered.length;
+  const totalPages = Math.ceil(totalItems / DUTY_MEMBER_LIMIT) || 1;
+  
+  if (DUTY_MEMBER_PAGE > totalPages) {
+    DUTY_MEMBER_PAGE = totalPages;
+  }
+  if (DUTY_MEMBER_PAGE < 1) {
+    DUTY_MEMBER_PAGE = 1;
+  }
+
+  const startIdx = (DUTY_MEMBER_PAGE - 1) * DUTY_MEMBER_LIMIT;
+  const endIdx = Math.min(startIdx + DUTY_MEMBER_LIMIT, totalItems);
+  const pageData = filtered.slice(startIdx, endIdx);
+
+  tableBody.innerHTML = "";
+  if (countEl) countEl.textContent = `(${totalItems} người)`;
+
+  // Cập nhật thanh phân trang
+  const startShow = totalItems === 0 ? 0 : startIdx + 1;
+  const endShow = endIdx;
+
+  const pagStartEl = document.getElementById("pagStart");
+  const pagEndEl = document.getElementById("pagEnd");
+  const pagTotalEl = document.getElementById("pagTotal");
+  if (pagStartEl) pagStartEl.textContent = String(startShow);
+  if (pagEndEl) pagEndEl.textContent = String(endShow);
+  if (pagTotalEl) pagTotalEl.textContent = String(totalItems);
+
+  const prevBtn = document.getElementById("btnPagPrev");
+  if (prevBtn) {
+    prevBtn.disabled = DUTY_MEMBER_PAGE === 1;
+    prevBtn.onclick = () => changeMemberPage(DUTY_MEMBER_PAGE - 1);
+  }
+  const nextBtn = document.getElementById("btnPagNext");
+  if (nextBtn) {
+    nextBtn.disabled = DUTY_MEMBER_PAGE === totalPages;
+    nextBtn.onclick = () => changeMemberPage(DUTY_MEMBER_PAGE + 1);
+  }
+
+  const pagesEl = document.getElementById("pagPages");
+  if (pagesEl) {
+    pagesEl.innerHTML = "";
+    for (let i = 1; i <= totalPages; i++) {
+      const isActive = i === DUTY_MEMBER_PAGE;
+      const activeClass = isActive 
+        ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
+        : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50";
+      pagesEl.insertAdjacentHTML("beforeend", `
+        <button type="button" class="w-7 h-7 flex items-center justify-center text-xs border rounded-lg font-semibold transition duration-150 ${activeClass}" onclick="changeMemberPage(${i})">
+          ${i}
+        </button>
+      `);
+    }
+  }
+
+  if (totalItems === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="4" class="px-6 py-8 text-center text-gray-500 italic text-sm">
+          Không tìm thấy thành viên nào phù hợp bộ lọc.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const getWeeklySchedule = (userId) => {
+    const schedule = DUTY_DRAFT_MODE ? DUTY_DRAFT_SCHEDULE : DUTY_CURRENT_SCHEDULE;
+    return schedule.filter(a => Number(a.user_id) === Number(userId));
+  };
+
+  pageData.forEach(u => {
+    const uid = Number(u.id);
+    const name = u.fullname || u.username || "Không tên";
+    const username = u.username ? `@${u.username}` : "";
+    const free = Number(u.free_count || 0);
+    const schedule = getWeeklySchedule(uid);
+
+    // Kiểm tra xem thành viên này có đang được check ở checklist không
+    const assignCb = document.querySelector(`#dutyAssignMemberList .duty-member-checkbox[value="${uid}"]`);
+    const isChecked = assignCb ? assignCb.checked : true; // Mặc định là true nếu chưa render checklist
+
+    // RENDER MINI BADGES
+    let scheduleHTML = '';
+    if (schedule.length > 0) {
+      const sorted = [...schedule].sort((a, b) => {
+        return parseInt(a.day.replace('T','')) - parseInt(b.day.replace('T',''));
+      });
+
+      scheduleHTML = `<div class="flex flex-wrap gap-1.5">`;
+      sorted.forEach(s => {
+        let label = '';
+        let colorClass = 'emerald';
+        if (s.shift === "sang") { label = "Sáng"; colorClass = "emerald"; }
+        else if (s.shift === "chieu") { label = "Chiều"; colorClass = "violet"; }
+        else if (s.shift === "rachoi_s") { label = "RCS"; colorClass = "amber"; }
+        else if (s.shift === "rachoi_c") { label = "RCC"; colorClass = "amber"; }
+
+        scheduleHTML += `
+          <span class="text-xs px-2 py-0.5 rounded font-semibold bg-${colorClass}-50 text-${colorClass}-700 border border-${colorClass}-200">
+            ${s.day} ${label}
+          </span>`;
+      });
+      scheduleHTML += `</div>`;
+    } else {
+      scheduleHTML = `<span class="text-xs text-gray-400 italic">Chưa có lịch trực</span>`;
+    }
+
+    // AVATAR
+    const avatarHTML = u.avatar_url ? 
+      `<img src="${u.avatar_url}" class="w-10 h-10 object-cover rounded-full border border-gray-200">` :
+      `<div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">${name.charAt(0).toUpperCase()}</div>`;
+
+    const rowHTML = `
+      <tr class="hover:bg-gray-50 transition duration-150">
+        <td class="px-6 py-4 w-12 text-center">
+          <input type="checkbox" class="duty-member-table-checkbox w-4 h-4 accent-blue-600 rounded cursor-pointer" value="${uid}" ${isChecked ? 'checked' : ''}>
+        </td>
+        <td class="px-6 py-4">
+          <div class="flex items-center gap-3">
+            ${avatarHTML}
+            <div>
+              <div class="font-semibold text-gray-800">${name}</div>
+              <div class="text-xs text-gray-500">${username}</div>
+            </div>
+          </div>
+        </td>
+        <td class="px-6 py-4 text-center">
+          <span class="px-2.5 py-1 text-xs font-semibold rounded-full ${free > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}">
+            ${free} buổi rảnh
+          </span>
+        </td>
+        <td class="px-6 py-4">
+          ${scheduleHTML}
+        </td>
+        <td class="px-6 py-4">
+          <div class="flex items-center justify-center gap-2">
+            <button type="button" onclick="viewAvailability(${uid})" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-semibold border border-blue-200 transition">
+              Xem
+            </button>
+            <button type="button" onclick="addShift(${uid})" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-semibold border border-emerald-200 transition">
+              Thêm ca
+            </button>
+            <button type="button" onclick="editShifts(${uid})" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-lg text-xs font-semibold border border-amber-200 transition">
+              Sửa
+            </button>
+            <button type="button" onclick="clearUserAssignments(${uid}, '${name.replace(/'/g, "\\'")}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold border border-red-200 transition">
+              Xóa
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+    tableBody.insertAdjacentHTML("beforeend", rowHTML);
+  });
+  updateSelectAllHeaderState();
+}
+
+// ==========================================
+// TÁC VỤ CRUD TRÊN BẢNG TỔNG QUAN (ADMIN)
+// ==========================================
+
+window.viewAvailability = async function(userId) {
+  try {
+    const q = getAdminNextWeekQuery();
+    const res = await fetch(`${DUTY_API}?action=get_user_availability&user_id=${userId}&${q}`);
+    const json = await res.json();
+    if (!json.ok) {
+      toast(json.error || "Không thể tải thông tin", "error");
+      return;
+    }
+
+    const { availability, study } = json.data;
+    let assignments = json.data.assignments || [];
+    if (DUTY_DRAFT_MODE) {
+      assignments = DUTY_DRAFT_SCHEDULE.filter(a => Number(a.user_id) === Number(userId));
+    }
+
+    const member = DUTY_MEMBERS_CACHE.find(m => m.id === userId) || {};
+    const name = member.fullname || member.username || "Không tên";
+
+    const days = [2, 3, 4, 5, 6];
+    const dayLabels = { 2: "Thứ 2", 3: "Thứ 3", 4: "Thứ 4", 5: "Thứ 5", 6: "Thứ 6" };
+
+    // Map avail & study & assigns
+    const availMap = {};
+    availability.forEach(a => { availMap[`${a.day}-${a.shift}`] = true; });
+
+    const studyMap = {};
+    study.forEach(s => { studyMap[`${s.day}-${s.shift}`] = true; });
+
+    const assignMap = {};
+    assignments.forEach(asg => {
+      const dayNum = parseInt(asg.day.replace('T', ''));
+      const key = `${dayNum}-${asg.shift}`;
+      if (!assignMap[key]) assignMap[key] = [];
+      assignMap[key].push(asg);
+    });
+
+    let html = `
+      <div class="space-y-6 text-sm text-gray-700">
+        <div>
+          <h4 class="font-bold text-gray-800 text-base mb-1">${name}</h4>
+          <p class="text-xs text-gray-500">Chi tiết đăng ký lịch rảnh, lịch học và lịch trực tuần này</p>
+        </div>
+
+        <div class="border rounded-xl overflow-hidden bg-white">
+          <table class="w-full text-xs text-center border-collapse">
+            <thead class="bg-gray-50 border-b">
+              <tr class="font-semibold text-gray-600">
+                <th class="px-3 py-2 text-left">Buổi / Thứ</th>
+                ${days.map(d => `<th class="px-3 py-2">${dayLabels[d]}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody class="divide-y">
+              <!-- SÁNG -->
+              <tr>
+                <td class="px-3 py-2 text-left font-semibold bg-gray-50">Sáng</td>
+                ${days.map(d => {
+                  const hasStudy = studyMap[`${d}-morning`];
+                  const hasAvail = availMap[`${d}-morning`];
+                  const isAssigned = assignMap[`${d}-sang`];
+                  let badge = '';
+                  if (hasStudy) badge += `<span class="block px-1.5 py-0.5 rounded bg-red-100 text-red-700 mb-1">Lịch học</span>`;
+                  if (hasAvail) badge += `<span class="block px-1.5 py-0.5 rounded bg-green-100 text-green-700 mb-1">Rảnh</span>`;
+                  if (isAssigned) badge += `<span class="block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Đã trực</span>`;
+                  return `<td class="px-2 py-2">${badge || '-'}</td>`;
+                }).join('')}
+              </tr>
+              <!-- CHIỀU -->
+              <tr>
+                <td class="px-3 py-2 text-left font-semibold bg-gray-50">Chiều</td>
+                ${days.map(d => {
+                  const hasStudy = studyMap[`${d}-afternoon`];
+                  const hasAvail = availMap[`${d}-afternoon`];
+                  const isAssigned = assignMap[`${d}-chieu`];
+                  let badge = '';
+                  if (hasStudy) badge += `<span class="block px-1.5 py-0.5 rounded bg-red-100 text-red-700 mb-1">Lịch học</span>`;
+                  if (hasAvail) badge += `<span class="block px-1.5 py-0.5 rounded bg-green-100 text-green-700 mb-1">Rảnh</span>`;
+                  if (isAssigned) badge += `<span class="block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Đã trực</span>`;
+                  return `<td class="px-2 py-2">${badge || '-'}</td>`;
+                }).join('')}
+              </tr>
+              <!-- RA CHƠI S -->
+              <tr>
+                <td class="px-3 py-2 text-left font-semibold bg-gray-50">Ra chơi S</td>
+                ${days.map(d => {
+                  const hasAvail = availMap[`${d}-break_morning`];
+                  const isAssigned = assignMap[`${d}-rachoi_s`];
+                  let badge = '';
+                  if (hasAvail) badge += `<span class="block px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 mb-1">Rảnh</span>`;
+                  if (isAssigned) badge += `<span class="block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Đã trực</span>`;
+                  return `<td class="px-2 py-2">${badge || '-'}</td>`;
+                }).join('')}
+              </tr>
+              <!-- RA CHƠI C -->
+              <tr>
+                <td class="px-3 py-2 text-left font-semibold bg-gray-50">Ra chơi C</td>
+                ${days.map(d => {
+                  const hasAvail = availMap[`${d}-break_afternoon`];
+                  const isAssigned = assignMap[`${d}-rachoi_c`];
+                  let badge = '';
+                  if (hasAvail) badge += `<span class="block px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 mb-1">Rảnh</span>`;
+                  if (isAssigned) badge += `<span class="block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Đã trực</span>`;
+                  return `<td class="px-2 py-2">${badge || '-'}</td>`;
+                }).join('')}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex justify-end pt-3">
+          <button type="button" class="px-4 py-2 border rounded-lg hover:bg-gray-50" onclick="closeModal()">Đóng</button>
+        </div>
+      </div>
+    `;
+
+    modal(html, "Thông tin lịch đăng ký", "medium");
+  } catch (e) {
+    console.error(e);
+    toast("Lỗi hệ thống", "error");
+  }
+}
+
+window.addShift = function(userId) {
+  const member = DUTY_MEMBERS_CACHE.find(m => m.id === userId) || {};
+  const name = member.fullname || member.username || "Không tên";
+
+  const html = `
+    <div class="space-y-4 text-sm text-gray-700">
+      <div>
+        <h4 class="font-bold text-gray-800 text-base mb-1">Thêm ca trực: ${name}</h4>
+        <p class="text-xs text-gray-500">Gán ca trực thủ công cho thành viên này</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Chọn ngày</label>
+          <select id="addShiftDay" class="w-full px-3 py-2 border rounded-lg">
+            <option value="T2">Thứ 2</option>
+            <option value="T3">Thứ 3</option>
+            <option value="T4">Thứ 4</option>
+            <option value="T5">Thứ 5</option>
+            <option value="T6">Thứ 6</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Chọn ca trực</label>
+          <select id="addShiftType" class="w-full px-3 py-2 border rounded-lg">
+            <option value="sang">Sáng</option>
+            <option value="chieu">Chiều</option>
+            <option value="rachoi_s">Ra chơi Sáng</option>
+            <option value="rachoi_c">Ra chơi Chiều</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t">
+        <button type="button" class="px-4 py-2 border rounded-lg hover:bg-gray-50" onclick="closeModal()">Hủy</button>
+        <button type="button" id="confirmAddShiftBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Lưu lại</button>
+      </div>
+    </div>
+  `;
+
+  modal(html, "Gán ca trực thủ công", "small");
+
+  document.getElementById("confirmAddShiftBtn").onclick = async () => {
+    const day = document.getElementById("addShiftDay").value;
+    const shift = document.getElementById("addShiftType").value;
+
+    if (DUTY_DRAFT_MODE) {
+      const cntInTarget = DUTY_DRAFT_SCHEDULE.filter(a => a.day === day && a.shift === shift).length;
+      if (cntInTarget >= 3) {
+        toast("Ca này đã đủ 3 người", "warning");
+        return;
+      }
+
+      const isAlreadyInTarget = DUTY_DRAFT_SCHEDULE.some(a => a.user_id === userId && a.day === day && a.shift === shift);
+      if (isAlreadyInTarget) {
+        toast("Người này đã có trong ca đích", "warning");
+        return;
+      }
+
+      let toType = "thuong";
+      let toScore = 1.0;
+      if (shift === "rachoi_s" || shift === "rachoi_c") {
+        toType = "rachoi";
+        toScore = 0.5;
+      }
+
+      let currentScore = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId).reduce((sum, a) => sum + Number(a.score || 0), 0);
+      if (currentScore + toScore > 5.0 + 1e-9) {
+        toast("Người này sẽ vượt quá 5 điểm/tuần", "warning");
+        return;
+      }
+
+      DUTY_DRAFT_SCHEDULE.push({
+        user_id: userId,
+        fullname: name,
+        day: day,
+        shift: shift,
+        type: toType,
+        score: toScore
+      });
+
+      toast("✅ Đã thêm ca trực (Nháp) thành công", "success");
+      closeModal();
+      renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
+      return;
+    }
+
+    const q = getAdminNextWeekQuery();
+
+    try {
+      const res = await fetch(`${DUTY_API}?action=add_assignment&${q}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, day, shift })
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        toast(json.error || "Lỗi thêm ca trực", "error");
+        return;
+      }
+
+      toast("✅ Đã thêm ca trực thành công", "success");
+      closeModal();
+      loadDutyMembers();
+      loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+    } catch (e) {
+      console.error(e);
+      toast("❌ Lỗi hệ thống", "error");
+    }
+  };
+}
+
+window.editShifts = async function(userId) {
+  try {
+    const member = DUTY_MEMBERS_CACHE.find(m => m.id === userId) || {};
+    const name = member.fullname || member.username || "Không tên";
+
+    let assignments = [];
+    if (DUTY_DRAFT_MODE) {
+      assignments = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId);
+    } else {
+      const q = getAdminNextWeekQuery();
+      const res = await fetch(`${DUTY_API}?action=get_user_availability&user_id=${userId}&${q}`);
+      const json = await res.json();
+      if (!json.ok) {
+        toast(json.error || "Không thể tải thông tin", "error");
+        return;
+      }
+      assignments = json.data.assignments;
+    }
+
+    const renderShiftsList = () => {
+      if (assignments.length === 0) {
+        return `<div class="text-gray-400 italic text-center py-4 text-xs">Chưa có ca trực nào được phân công.</div>`;
+      }
+
+      return `
+        <div class="space-y-2 max-h-[200px] overflow-y-auto border rounded-xl p-3 bg-gray-50">
+          ${assignments.map(asg => {
+            const shiftLbl = shiftLabel(asg.shift);
+            return `
+              <div class="flex items-center justify-between p-2 bg-white rounded-lg border shadow-sm text-xs">
+                <span class="font-semibold text-gray-700">${asg.day} - ${shiftLbl} (${asg.type === 'rachoi' ? '0.5' : '1.0'} điểm)</span>
+                <button type="button" class="text-red-500 hover:text-red-700 font-bold px-2 py-1" onclick="deleteSingleAssignment(${userId}, '${asg.day}', '${asg.shift}')">
+                  Xóa
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    };
+
+    const html = `
+      <div class="space-y-4 text-sm text-gray-700">
+        <div>
+          <h4 class="font-bold text-gray-800 text-base mb-1">Chỉnh sửa ca trực: ${name}</h4>
+          <p class="text-xs text-gray-500">Quản lý và cập nhật ca trực hiện tại</p>
+        </div>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold text-gray-500 uppercase">Danh sách ca trực hiện tại</label>
+          <div id="editShiftsListContainer">
+            ${renderShiftsList()}
+          </div>
+        </div>
+
+        <div class="border-t pt-3 space-y-3">
+          <label class="block text-xs font-semibold text-gray-500 uppercase">Thêm nhanh ca trực mới</label>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <select id="editAddShiftDay" class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                <option value="T2">Thứ 2</option>
+                <option value="T3">Thứ 3</option>
+                <option value="T4">Thứ 4</option>
+                <option value="T5">Thứ 5</option>
+                <option value="T6">Thứ 6</option>
+              </select>
+            </div>
+            <div>
+              <select id="editAddShiftType" class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                <option value="sang">Sáng</option>
+                <option value="chieu">Chiều</option>
+                <option value="rachoi_s">Ra chơi Sáng</option>
+                <option value="rachoi_c">Ra chơi Chiều</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" id="editAddShiftBtn" class="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold">
+            Thêm ca trực
+          </button>
+        </div>
+
+        <div class="flex justify-end pt-3 border-t">
+          <button type="button" class="px-4 py-2 border rounded-lg hover:bg-gray-50 text-xs" onclick="closeModal()">Đóng</button>
+        </div>
+      </div>
+    `;
+
+    modal(html, "Chỉnh sửa ca trực", "medium");
+
+    // Click handler for Add
+    document.getElementById("editAddShiftBtn").onclick = async () => {
+      const day = document.getElementById("editAddShiftDay").value;
+      const shift = document.getElementById("editAddShiftType").value;
+
+      if (DUTY_DRAFT_MODE) {
+        const cntInTarget = DUTY_DRAFT_SCHEDULE.filter(a => a.day === day && a.shift === shift).length;
+        if (cntInTarget >= 3) {
+          toast("Ca này đã đủ 3 người", "warning");
+          return;
+        }
+
+        const isAlreadyInTarget = DUTY_DRAFT_SCHEDULE.some(a => a.user_id === userId && a.day === day && a.shift === shift);
+        if (isAlreadyInTarget) {
+          toast("Người này đã có trong ca đích", "warning");
+          return;
+        }
+
+        let toType = "thuong";
+        let toScore = 1.0;
+        if (shift === "rachoi_s" || shift === "rachoi_c") {
+          toType = "rachoi";
+          toScore = 0.5;
+        }
+
+        let currentScore = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId).reduce((sum, a) => sum + Number(a.score || 0), 0);
+        if (currentScore + toScore > 5.0 + 1e-9) {
+          toast("Người này sẽ vượt quá 5 điểm/tuần", "warning");
+          return;
+        }
+
+        DUTY_DRAFT_SCHEDULE.push({
+          user_id: userId,
+          fullname: name,
+          day: day,
+          shift: shift,
+          type: toType,
+          score: toScore
+        });
+
+        toast("✅ Đã thêm ca trực (Nháp) thành công", "success");
+        renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
+        closeModal();
+        setTimeout(() => editShifts(userId), 200);
+        return;
+      }
+
+      const q = getAdminNextWeekQuery();
+
+      try {
+        const res = await fetch(`${DUTY_API}?action=add_assignment&${q}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId, day, shift })
+        });
+        const jsonAdd = await res.json();
+        if (!jsonAdd.ok) {
+          toast(jsonAdd.error || "Lỗi thêm ca trực", "error");
+          return;
+        }
+
+        toast("✅ Đã thêm ca trực thành công", "success");
+        loadDutyMembers();
+        loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+        closeModal();
+        // Mở lại modal để xem thay đổi mới
+        setTimeout(() => editShifts(userId), 200);
+      } catch (e) {
+        console.error(e);
+        toast("❌ Lỗi hệ thống", "error");
+      }
+    };
+
+    // Helper window delete function to call inside modal
+    window.deleteSingleAssignment = async function(uid, day, shift) {
+      if (DUTY_DRAFT_MODE) {
+        const idx = DUTY_DRAFT_SCHEDULE.findIndex(a => a.user_id === uid && a.day === day && a.shift === shift);
+        if (idx !== -1) {
+          DUTY_DRAFT_SCHEDULE.splice(idx, 1);
+          toast("Đã xóa ca trực (Nháp)", "success");
+        }
+        renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
+        closeModal();
+        setTimeout(() => editShifts(uid), 200);
+        return;
+      }
+
+      const q = getAdminNextWeekQuery();
+      try {
+        const res = await fetch(`${DUTY_API}?action=delete_assignment&${q}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: uid, day, shift })
+        });
+        const jsonDel = await res.json();
+        if (!jsonDel.ok) {
+          toast(jsonDel.error || "Lỗi xóa ca trực", "error");
+          return;
+        }
+
+        toast("Đã xóa ca trực", "success");
+        loadDutyMembers();
+        loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+        closeModal();
+        setTimeout(() => editShifts(uid), 200);
+      } catch (e) {
+        console.error(e);
+        toast("❌ Lỗi hệ thống", "error");
+      }
+    };
+
+  } catch (e) {
+    console.error(e);
+    toast("Lỗi hệ thống", "error");
+  }
+}
+
+window.clearUserAssignments = function(userId, name) {
+  modal(`
+    <div class="text-center space-y-4">
+      <p class="text-gray-700">
+        Bạn có chắc chắn muốn <b>xóa toàn bộ</b> phân công lịch trực của thành viên <b>${name}</b> trong tuần này không?
+      </p>
+
+      <div class="flex justify-center gap-3">
+        <button class="px-4 py-2 border rounded-lg" onclick="closeModal()">Hủy</button>
+        <button id="confirmClearUserBtn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg">
+          Xác nhận xóa
+        </button>
+      </div>
+    </div>
+  `, "Xác nhận xóa lịch trực", "small");
+
+  document.getElementById("confirmClearUserBtn").onclick = async () => {
+    try {
+      const q = getAdminNextWeekQuery();
+      const res = await fetch(`${DUTY_API}?action=delete_user_assignments&user_id=${userId}&${q}`);
+      const json = await res.json();
+      if (!json.ok) {
+        toast(json.error || "Không thể xóa lịch trực", "error");
+        return;
+      }
+
+      toast(`✅ Đã xóa toàn bộ lịch trực của ${name}`, "success");
+      closeModal();
+      loadDutyMembers();
+      loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+    } catch (e) {
+      console.error(e);
+      toast("❌ Lỗi hệ thống", "error");
+    }
+  };
 }
 
 
@@ -781,7 +1493,6 @@ async function handleDrop(item, cell, evt) {
     isCopy = (evt?.dataTransfer?.getData("copy") === "1");
   } catch {
     isCopy = false;
-
   }
 
   // nếu thả vào đúng ô cũ, bỏ qua
@@ -791,6 +1502,67 @@ async function handleDrop(item, cell, evt) {
   const maxPerCell = 3;
   if (cell.querySelectorAll(".duty-item").length >= maxPerCell) {
     toast("Ca này đã đủ 3 người", "warning");
+    return;
+  }
+
+  if (DUTY_DRAFT_MODE) {
+    const member = DUTY_MEMBERS_CACHE.find(m => m.id === userId) || {};
+    const name = member.fullname || member.username || "Không tên";
+
+    const cntInTarget = DUTY_DRAFT_SCHEDULE.filter(a => a.day === toDay && a.shift === toShift).length;
+    if (cntInTarget >= 3) {
+      toast("Ca này đã đủ 3 người", "warning");
+      return;
+    }
+
+    const isAlreadyInTarget = DUTY_DRAFT_SCHEDULE.some(a => a.user_id === userId && a.day === toDay && a.shift === toShift);
+    if (isAlreadyInTarget) {
+      toast("Người này đã có trong ca đích", "warning");
+      return;
+    }
+
+    let toType = "thuong";
+    let toScore = 1.0;
+    if (toShift === "rachoi_s" || toShift === "rachoi_c") {
+      toType = "rachoi";
+      toScore = 0.5;
+    }
+
+    let currentScore = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId).reduce((sum, a) => sum + Number(a.score || 0), 0);
+
+    let fromScore = 0;
+    const fromIndex = DUTY_DRAFT_SCHEDULE.findIndex(a => a.user_id === userId && a.day === fromDay && a.shift === fromShift);
+    if (fromIndex !== -1) {
+      fromScore = Number(DUTY_DRAFT_SCHEDULE[fromIndex].score || 0);
+    }
+
+    const afterScore = isCopy ? (currentScore + toScore) : (currentScore - fromScore + toScore);
+    if (afterScore > 5.0 + 1e-9) {
+      toast("Người này sẽ vượt quá 5 điểm/tuần", "warning");
+      return;
+    }
+
+    if (isCopy) {
+      DUTY_DRAFT_SCHEDULE.push({
+        user_id: userId,
+        fullname: name,
+        day: toDay,
+        shift: toShift,
+        type: toType,
+        score: toScore
+      });
+      toast("Đã nhân đôi ca trực (Nháp)", "success");
+    } else {
+      if (fromIndex !== -1) {
+        DUTY_DRAFT_SCHEDULE[fromIndex].day = toDay;
+        DUTY_DRAFT_SCHEDULE[fromIndex].shift = toShift;
+        DUTY_DRAFT_SCHEDULE[fromIndex].type = toType;
+        DUTY_DRAFT_SCHEDULE[fromIndex].score = toScore;
+        toast("Đã cập nhật lịch trực (Nháp)", "success");
+      }
+    }
+
+    renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
     return;
   }
 
@@ -916,11 +1688,15 @@ function updateWeekHeader(week) {
   const start = week.week_start;
   const end = week.week_end;
 
+  DUTY_CURRENT_WEEK_START = start;
+  DUTY_CURRENT_WEEK_END = end;
+
   if (rangeEl) {
     rangeEl.textContent = `${fmtDDMMYYYY(start)} → ${fmtDDMMYYYY(end)}`;
     rangeEl.dataset.weekStart = start;
     rangeEl.dataset.weekEnd = end;
   }
+  updateFilterShiftButtonLabel();
 
   for (let d = 2; d <= 6; d++) {
     const el = document.getElementById(`date-${d}`);
@@ -934,6 +1710,18 @@ let VIEW_WEEK_OFFSET = 1;
 
 async function loadDutyViewSchedule(offset = VIEW_WEEK_OFFSET) {
   VIEW_WEEK_OFFSET = offset;
+
+  // Tải ma trận đăng ký rảnh/học
+  try {
+    const q = `offset=${offset}`;
+    const matrixRes = await fetch(`${DUTY_API}?action=get_week_availability_matrix&${q}`);
+    const matrixJson = await matrixRes.json();
+    if (matrixJson.ok) {
+      DUTY_AVAILABILITY_MATRIX = matrixJson.data || {};
+    }
+  } catch (err) {
+    console.error("[LOAD AVAILABILITY MATRIX ERROR]", err);
+  }
 
   // meta tuần
   const metaRes = await fetch(`${DUTY_API}?action=get_week_meta&offset=${offset}`, {
@@ -954,6 +1742,9 @@ async function loadDutyViewSchedule(offset = VIEW_WEEK_OFFSET) {
 
   const rows = Array.isArray(json.data) ? json.data : (json.data?.rows || []);
   renderAdminDutyView(rows);
+
+  // Đồng bộ hóa thống kê và danh sách thành viên theo tuần được chọn
+  loadAdminOverview();
 }
 
 // events
@@ -962,6 +1753,7 @@ document.getElementById("btnWeekThis")?.addEventListener("click", () => loadDuty
 document.getElementById("btnWeekNext")?.addEventListener("click", () => loadDutyViewSchedule(VIEW_WEEK_OFFSET + 1));
 
 function renderAdminDutyView(rows = []) {
+  DUTY_CURRENT_SCHEDULE = rows;
   const tbody = document.getElementById("dutyViewTable");
   if (!tbody) return;
 
@@ -1047,6 +1839,79 @@ function renderAdminDutyView(rows = []) {
         });
       }
 
+      // Tìm gợi ý mờ
+      let suggestHTML = '';
+      if (list.length < 3) {
+        const dayMap = { "T2": 2, "T3": 3, "T4": 4, "T5": 5, "T6": 6 };
+        const dayNum = dayMap[d];
+
+        const shiftMap = {
+          "sang": "morning",
+          "chieu": "afternoon",
+          "rachoi_s": "break_morning",
+          "rachoi_c": "break_afternoon"
+        };
+        const availShift = shiftMap[s.key];
+        let studyShift = availShift;
+        if (availShift === "break_morning") studyShift = "morning";
+        if (availShift === "break_afternoon") studyShift = "afternoon";
+
+        const getWeeklyScore = (userId) => {
+          const schedule = DUTY_DRAFT_MODE ? DUTY_DRAFT_SCHEDULE : DUTY_CURRENT_SCHEDULE;
+          return schedule
+            .filter(a => Number(a.user_id) === userId)
+            .reduce((sum, a) => sum + Number(a.score || (a.type === 'rachoi' ? 0.5 : 1.0)), 0);
+        };
+
+        const activeUserIdsInCell = list.map(u => Number(u.user_id));
+        const suggestions = [];
+
+        if (Array.isArray(DUTY_MEMBERS_CACHE)) {
+          DUTY_MEMBERS_CACHE.forEach(u => {
+            const userId = Number(u.id);
+            if (activeUserIdsInCell.includes(userId)) return;
+
+            const userMatrix = DUTY_AVAILABILITY_MATRIX[userId] || { availability: [], study: [] };
+            const isFree = userMatrix.availability.some(a => a.day === dayNum && a.shift === availShift);
+            const isStudying = userMatrix.study.some(s => s.day === dayNum && s.shift === studyShift);
+            const score = getWeeklyScore(userId);
+
+            if (isFree && !isStudying && score < 5.0) {
+              suggestions.push({
+                id: userId,
+                name: u.fullname || u.username || "Không tên",
+                score: score
+              });
+            }
+          });
+        }
+
+        // Sắp xếp theo điểm tăng dần để ưu tiên người trực ít hơn
+        suggestions.sort((a, b) => a.score - b.score);
+
+        // Lấy tối đa số lượng gợi ý có thể gán (3 - list.length) hoặc tối đa 2 người
+        const maxSuggestionsToShow = Math.min(3 - list.length, 2);
+        const topSuggestions = suggestions.slice(0, maxSuggestionsToShow);
+
+        if (topSuggestions.length > 0) {
+          suggestHTML += `<div class="duty-suggestions-wrapper mt-2 pt-2 border-t border-gray-200/50 space-y-1">`;
+          topSuggestions.forEach(u => {
+            suggestHTML += `
+              <div class="duty-item-suggest px-2 py-1 rounded-lg border border-dashed border-blue-300 bg-blue-50/50 text-blue-800 text-[11px] opacity-60 flex items-center justify-between gap-1 select-none transition duration-150 hover:opacity-100 hover:bg-blue-100/50 hover:border-blue-400"
+                   data-user-id="${u.id}" data-day="${d}" data-shift="${s.key}" data-name="${u.name}">
+                <span class="truncate block">💡 ${u.name} (${u.score})</span>
+                <button type="button" class="duty-approve-btn text-emerald-600 hover:text-emerald-800 font-extrabold text-[12px] px-1 py-0.2 rounded hover:bg-emerald-50 transition" title="Duyệt ca trực này">
+                  ✓
+                </button>
+              </div>
+            `;
+          });
+          suggestHTML += `</div>`;
+        }
+      }
+
+      row += suggestHTML;
+
       row += `
           </div>
         </td>
@@ -1067,9 +1932,85 @@ function renderAdminDutyView(rows = []) {
     updateDutyBulkBar();
   }
   reapplyDutyBulkSelectionToDom();
-
+  renderDutyMemberListTable();
 }
 document.addEventListener("click", async (e) => {
+  const btnApprove = e.target.closest(".duty-approve-btn");
+  if (btnApprove) {
+    e.stopPropagation();
+    const suggestEl = btnApprove.closest(".duty-item-suggest");
+    if (!suggestEl) return;
+
+    const userId = Number(suggestEl.dataset.userId || 0);
+    const day = suggestEl.dataset.day;
+    const shift = suggestEl.dataset.shift;
+    const name = suggestEl.dataset.name;
+
+    if (!userId || !day || !shift) return;
+
+    let toType = "thuong";
+    let toScore = 1.0;
+    if (shift === "rachoi_s" || shift === "rachoi_c") {
+      toType = "rachoi";
+      toScore = 0.5;
+    }
+
+    if (DUTY_DRAFT_MODE) {
+      const cntInTarget = DUTY_DRAFT_SCHEDULE.filter(a => a.day === day && a.shift === shift).length;
+      if (cntInTarget >= 3) {
+        toast("Ca này đã đủ 3 người", "warning");
+        return;
+      }
+
+      const isAlreadyInTarget = DUTY_DRAFT_SCHEDULE.some(a => a.user_id === userId && a.day === day && a.shift === shift);
+      if (isAlreadyInTarget) {
+        toast("Người này đã có trong ca đích", "warning");
+        return;
+      }
+
+      let currentScore = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId).reduce((sum, a) => sum + Number(a.score || 0), 0);
+      if (currentScore + toScore > 5.0 + 1e-9) {
+        toast("Người này sẽ vượt quá 5 điểm/tuần", "warning");
+        return;
+      }
+
+      DUTY_DRAFT_SCHEDULE.push({
+        user_id: userId,
+        fullname: name,
+        day: day,
+        shift: shift,
+        type: toType,
+        score: toScore
+      });
+
+      toast(`✅ Đã duyệt ${name} vào ca trực (Nháp)`, "success");
+      renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
+      return;
+    }
+
+    try {
+      const q = getAdminNextWeekQuery();
+      const res = await fetch(`${DUTY_API}?action=add_assignment&${q}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, day, shift }),
+      });
+
+      const json = await res.json();
+      if (!json.ok) {
+        toast(json.error || "Không thể duyệt ca trực", "error");
+        return;
+      }
+
+      toast(`✅ Đã duyệt ${name} vào ca trực thành công`, "success");
+      loadDutyViewSchedule(VIEW_WEEK_OFFSET);
+    } catch (err) {
+      console.error(err);
+      toast("Lỗi khi duyệt ca trực", "error");
+    }
+    return;
+  }
+
   const btnClear = e.target.closest("#dutyBulkClear");
   const btnDel = e.target.closest("#dutyBulkDelete");
 
@@ -1197,6 +2138,22 @@ function initDutyTrashZone() {
       return;
     }
 
+    if (DUTY_DRAFT_MODE) {
+      const idx = DUTY_DRAFT_SCHEDULE.findIndex(a => a.user_id === userId && a.day === day && a.shift === shift);
+      if (idx !== -1) {
+        DUTY_DRAFT_SCHEDULE.splice(idx, 1);
+        toast("Đã xoá ca trực (Nháp)", "success");
+      }
+      renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
+      hideDutyTrash();
+
+      const key = dutyKey(userId, day, shift);
+      if (DUTY_BULK_SELECTED.delete(key)) {
+        updateDutyBulkBar();
+      }
+      return;
+    }
+
     try {
       const q = getAdminNextWeekQuery();
       const res = await fetch(`${DUTY_API}?action=delete_assignment&${q}`, {
@@ -1307,6 +2264,27 @@ function openDutyAddModal(day, shift) {
 
   if (!search || !listBox) return;
 
+  const dayMap = { "T2": 2, "T3": 3, "T4": 4, "T5": 5, "T6": 6 };
+  const dayNum = dayMap[day];
+
+  const shiftMap = {
+    "sang": "morning",
+    "chieu": "afternoon",
+    "rachoi_s": "break_morning",
+    "rachoi_c": "break_afternoon"
+  };
+  const availShift = shiftMap[shift];
+  let studyShift = availShift;
+  if (availShift === "break_morning") studyShift = "morning";
+  if (availShift === "break_afternoon") studyShift = "afternoon";
+
+  const getWeeklyScore = (userId) => {
+    const schedule = DUTY_DRAFT_MODE ? DUTY_DRAFT_SCHEDULE : DUTY_CURRENT_SCHEDULE;
+    return schedule
+      .filter(a => Number(a.user_id) === userId)
+      .reduce((sum, a) => sum + Number(a.score || (a.type === 'rachoi' ? 0.5 : 1.0)), 0);
+  };
+
   const renderList = (keyword = "") => {
     const k = (keyword || "").trim().toLowerCase();
     const items = Array.isArray(DUTY_MEMBERS_CACHE) ? DUTY_MEMBERS_CACHE : [];
@@ -1319,32 +2297,141 @@ function openDutyAddModal(day, shift) {
         return name.includes(k) || user.includes(k);
       });
 
-    if (filtered.length === 0) {
-      listBox.innerHTML = `<div class="p-4 text-sm text-gray-500">Không có kết quả</div>`;
-      return;
+    const topSuggestions = [];
+    const backupSuggestions = [];
+    const otherMembers = [];
+
+    filtered.forEach(u => {
+      const userMatrix = DUTY_AVAILABILITY_MATRIX[u.id] || { availability: [], study: [] };
+      const isFree = userMatrix.availability.some(a => a.day === dayNum && a.shift === availShift);
+      const isStudying = userMatrix.study.some(s => s.day === dayNum && s.shift === studyShift);
+      const score = getWeeklyScore(u.id);
+
+      const memberData = {
+        ...u,
+        score,
+        isFree,
+        isStudying,
+        userMatrix
+      };
+
+      if (isFree && !isStudying && score < 3.0) {
+        topSuggestions.push(memberData);
+      } else if (isFree && !isStudying && score >= 3.0 && score < 5.0) {
+        backupSuggestions.push(memberData);
+      } else {
+        memberData.reason = score >= 5.0 
+          ? "Đạt tối đa 5 ca" 
+          : (isStudying ? "Trùng lịch học" : "Không đăng ký rảnh");
+        otherMembers.push(memberData);
+      }
+    });
+
+    const sortByScoreAndName = (a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      return (a.fullname || "").localeCompare(b.fullname || "");
+    };
+
+    topSuggestions.sort(sortByScoreAndName);
+    backupSuggestions.sort(sortByScoreAndName);
+    otherMembers.sort((a, b) => (a.fullname || "").localeCompare(b.fullname || ""));
+
+    const renderMemberItem = (u, groupClass = "") => {
+      const name = u.fullname || u.username || "Không tên";
+      const sub = u.username ? `@${u.username}` : "";
+      const free = Number(u.free_count || 0);
+      const score = u.score;
+
+      // AVATAR
+      const avatarHTML = u.avatar_url ? 
+        `<img src="${u.avatar_url}" class="w-8 h-8 object-cover rounded-full border border-gray-200">` :
+        `<div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold">${name.charAt(0).toUpperCase()}</div>`;
+
+      // Badge điểm
+      let scoreBadge = '';
+      if (score >= 3.0) {
+        scoreBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">${score} ca</span>`;
+      } else {
+        scoreBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">${score} ca</span>`;
+      }
+
+      // Nhãn phụ: lý do nếu thuộc nhóm "Thành viên khác"
+      let extraLabel = '';
+      if (u.reason) {
+        let reasonColor = 'bg-gray-100 text-gray-600 border-gray-200';
+        if (u.reason === 'Trùng lịch học') reasonColor = 'bg-red-50 text-red-700 border-red-200';
+        else if (u.reason === 'Đạt tối đa 5 ca') reasonColor = 'bg-rose-50 text-rose-700 border-rose-200';
+        extraLabel = `<span class="text-[10px] px-1.5 py-0.5 rounded border ${reasonColor}">${u.reason}</span>`;
+      } else {
+        extraLabel = `<span class="text-[10px] text-gray-500">${free} buổi rảnh</span>`;
+      }
+
+      return `
+        <button
+          type="button"
+          class="w-full text-left px-4 py-3 border-b hover:bg-gray-50/80 duty-add-pick flex items-center gap-3 transition ${groupClass}"
+          data-user-id="${u.id}"
+        >
+          ${avatarHTML}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-gray-800 text-sm truncate">${name}</span>
+              ${scoreBadge}
+            </div>
+            <div class="text-xs text-gray-500 mt-0.5 flex items-center justify-between">
+              <span>${sub}</span>
+              ${extraLabel}
+            </div>
+          </div>
+        </button>
+      `;
+    };
+
+    let htmlContent = "";
+
+    if (topSuggestions.length > 0) {
+      htmlContent += `
+        <div class="bg-emerald-50/20 p-2 border-b border-emerald-100">
+          <div class="text-emerald-800 bg-emerald-100/60 px-2.5 py-1 rounded-md font-bold text-[11px] uppercase tracking-wide flex items-center gap-1.5 mb-1 select-none">
+            <span>💡 Gợi ý hàng đầu</span>
+            <span class="text-[10px] lowercase font-normal text-emerald-600">(${topSuggestions.length} đang rảnh & chưa đủ ca)</span>
+          </div>
+          <div class="divide-y divide-gray-100 bg-white rounded-lg border border-gray-100 overflow-hidden">
+            ${topSuggestions.map(u => renderMemberItem(u, "bg-white")).join("")}
+          </div>
+        </div>
+      `;
     }
 
-    listBox.innerHTML = filtered
-      .map((u) => {
-        const name = u.fullname || u.username || "Không tên";
-        const sub = u.username ? `@${u.username}` : "";
-        const free = Number(u.free_count || 0);
+    if (backupSuggestions.length > 0) {
+      htmlContent += `
+        <div class="bg-amber-50/10 p-2 border-b border-amber-100">
+          <div class="text-amber-800 bg-amber-100/50 px-2.5 py-1 rounded-md font-bold text-[11px] uppercase tracking-wide flex items-center gap-1.5 mb-1 select-none">
+            <span>⚡ Gợi ý dự phòng</span>
+            <span class="text-[10px] lowercase font-normal text-amber-600">(${backupSuggestions.length} đã đủ ca nhưng rảnh)</span>
+          </div>
+          <div class="divide-y divide-gray-100 bg-white rounded-lg border border-gray-100 overflow-hidden">
+            ${backupSuggestions.map(u => renderMemberItem(u, "bg-white")).join("")}
+          </div>
+        </div>
+      `;
+    }
 
-        return `
-          <button
-            type="button"
-            class="w-full text-left px-4 py-3 border-b hover:bg-gray-50 duty-add-pick"
-            data-user-id="${u.id}"
-          >
-            <div class="font-medium text-gray-800">${name}</div>
-            <div class="text-xs text-gray-500 flex items-center justify-between">
-              <span>${sub}</span>
-              <span>${free} buổi rảnh</span>
-            </div>
-          </button>
-        `;
-      })
-      .join("");
+    if (otherMembers.length > 0) {
+      htmlContent += `
+        <div class="bg-gray-50/30 p-2">
+          <div class="text-gray-600 bg-gray-200/50 px-2.5 py-1 rounded-md font-bold text-[11px] uppercase tracking-wide flex items-center gap-1.5 mb-1 select-none">
+            <span>Thành viên khác</span>
+            <span class="text-[10px] lowercase font-normal text-gray-500">(${otherMembers.length} bận học hoặc không đăng ký rảnh)</span>
+          </div>
+          <div class="divide-y divide-gray-100 bg-white rounded-lg border border-gray-100 overflow-hidden">
+            ${otherMembers.map(u => renderMemberItem(u, "bg-white")).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    listBox.innerHTML = htmlContent || `<div class="p-4 text-sm text-gray-500 text-center">Không có kết quả</div>`;
   };
 
   // init list
@@ -1372,6 +2459,50 @@ function openDutyAddModal(day, shift) {
     );
     if (cell && cell.querySelectorAll(".duty-item").length >= 3) {
       toast("Ca này đã đủ 3 người", "warning");
+      return;
+    }
+
+    let toType = "thuong";
+    let toScore = 1.0;
+    if (ts === "rachoi_s" || ts === "rachoi_c") {
+      toType = "rachoi";
+      toScore = 0.5;
+    }
+
+    if (DUTY_DRAFT_MODE) {
+      const cntInTarget = DUTY_DRAFT_SCHEDULE.filter(a => a.day === td && a.shift === ts).length;
+      if (cntInTarget >= 3) {
+        toast("Ca này đã đủ 3 người", "warning");
+        return;
+      }
+
+      const isAlreadyInTarget = DUTY_DRAFT_SCHEDULE.some(a => a.user_id === userId && a.day === td && a.shift === ts);
+      if (isAlreadyInTarget) {
+        toast("Người này đã có trong ca đích", "warning");
+        return;
+      }
+
+      let currentScore = DUTY_DRAFT_SCHEDULE.filter(a => a.user_id === userId).reduce((sum, a) => sum + Number(a.score || 0), 0);
+      if (currentScore + toScore > 5.0 + 1e-9) {
+        toast("Người này sẽ vượt quá 5 điểm/tuần", "warning");
+        return;
+      }
+
+      const member = DUTY_MEMBERS_CACHE.find(m => m.id === userId) || {};
+      const name = member.fullname || member.username || "Không tên";
+
+      DUTY_DRAFT_SCHEDULE.push({
+        user_id: userId,
+        fullname: name,
+        day: td,
+        shift: ts,
+        type: toType,
+        score: toScore
+      });
+
+      toast("✅ Đã thêm người vào ca (Nháp)", "success");
+      if (typeof closeModal === "function") closeModal();
+      renderAdminDutyView(DUTY_DRAFT_SCHEDULE);
       return;
     }
 
@@ -1450,3 +2581,148 @@ document.addEventListener("click", (e) => {
 
   toggleDutyBulkSelect(item);
 });
+
+function openFilterShiftModal() {
+  const date2 = document.getElementById("date-2")?.textContent || "";
+  const date3 = document.getElementById("date-3")?.textContent || "";
+  const date4 = document.getElementById("date-4")?.textContent || "";
+  const date5 = document.getElementById("date-5")?.textContent || "";
+  const date6 = document.getElementById("date-6")?.textContent || "";
+  const weekRangeText = document.getElementById("dutyWeekRangeAdmin")?.textContent || document.getElementById("dutyWeekRange")?.textContent || "";
+
+  const shifts = [
+    { label: "Sáng", availKey: "morning" },
+    { label: "Chiều", availKey: "afternoon" },
+    { label: "Ra chơi S", availKey: "break_morning" },
+    { label: "Ra chơi C", availKey: "break_afternoon" }
+  ];
+  const days = [2, 3, 4, 5, 6];
+
+  const root = document.createElement("div");
+  
+  root.innerHTML = `
+    <div class="space-y-4 text-sm text-gray-700">
+      <div>
+        <h4 class="font-bold text-gray-800 text-base mb-1">Chọn thời gian rảnh cụ thể</h4>
+        <p class="text-xs text-gray-500">Lọc ra những thành viên rảnh trong các ca được tích chọn dưới đây</p>
+        <p class="text-xs text-orange-600 font-semibold mt-1">Tuần: ${weekRangeText}</p>
+      </div>
+
+      <div class="overflow-x-auto border rounded-xl bg-white shadow-sm">
+        <table class="w-full text-xs text-center border-collapse">
+          <thead class="bg-gray-50 border-b">
+            <tr class="font-semibold text-gray-600">
+              <th class="px-3 py-3 border-r text-left">Buổi / Thứ</th>
+              <th class="px-3 py-3 border-r">Thứ 2<br><span class="text-[10px] text-gray-400 font-normal">${date2}</span></th>
+              <th class="px-3 py-3 border-r">Thứ 3<br><span class="text-[10px] text-gray-400 font-normal">${date3}</span></th>
+              <th class="px-3 py-3 border-r">Thứ 4<br><span class="text-[10px] text-gray-400 font-normal">${date4}</span></th>
+              <th class="px-3 py-3 border-r">Thứ 5<br><span class="text-[10px] text-gray-400 font-normal">${date5}</span></th>
+              <th class="px-3 py-3">Thứ 6<br><span class="text-[10px] text-gray-400 font-normal">${date6}</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            ${shifts.map(s => `
+              <tr>
+                <td class="px-3 py-3 text-left font-semibold bg-gray-50 border-r">${s.label}</td>
+                ${days.map(d => {
+                  const key = `${d}-${s.availKey}`;
+                  const isChecked = FILTER_SELECTED_SHIFTS.includes(key);
+                  return `
+                    <td class="px-2 py-3 border-r align-middle cursor-pointer hover:bg-blue-50/30 transition-all select-none suggest-filter-cell" data-key="${key}">
+                      <div class="flex items-center justify-center">
+                        <input type="checkbox" class="w-5 h-5 accent-blue-600 rounded cursor-pointer suggest-filter-checkbox" data-key="${key}" ${isChecked ? 'checked' : ''}>
+                      </div>
+                    </td>
+                  `;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-between items-center pt-3 border-t">
+        <button type="button" class="px-3 py-1.5 text-xs text-red-600 hover:text-red-800 font-semibold hover:bg-red-50 rounded-lg transition" id="btnClearFilterShifts">
+          Xóa tất cả bộ lọc ca
+        </button>
+        <div class="flex gap-2">
+          <button type="button" class="px-4 py-2 border rounded-lg hover:bg-gray-50 text-xs" onclick="closeModal()">Hủy</button>
+          <button type="button" id="btnConfirmFilterShifts" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm">
+            Xác nhận
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal(root, "Bộ lọc thời gian rảnh", "medium");
+
+  // click toggle checkbox khi click vào cell
+  root.addEventListener("click", (e) => {
+    const cell = e.target.closest(".suggest-filter-cell");
+    if (cell && !e.target.classList.contains("suggest-filter-checkbox")) {
+      const checkbox = cell.querySelector(".suggest-filter-checkbox");
+      if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+      }
+    }
+  });
+
+  // Nút xóa tất cả
+  root.querySelector("#btnClearFilterShifts").onclick = () => {
+    root.querySelectorAll(".suggest-filter-checkbox").forEach(cb => cb.checked = false);
+  };
+
+  // Nút xác nhận
+  root.querySelector("#btnConfirmFilterShifts").onclick = () => {
+    const selected = [];
+    root.querySelectorAll(".suggest-filter-checkbox:checked").forEach(cb => {
+      selected.push(cb.dataset.key);
+    });
+
+    FILTER_SELECTED_SHIFTS = selected;
+
+    updateFilterShiftButtonLabel();
+
+    DUTY_MEMBER_PAGE = 1; // reset về trang 1 khi thay đổi filter ca
+    closeModal();
+    renderDutyMemberListTable();
+  };
+}
+
+window.changeMemberPage = function(p) {
+  DUTY_MEMBER_PAGE = p;
+  renderDutyMemberListTable();
+};
+
+function updateFilterShiftButtonLabel() {
+  const labelEl = document.getElementById("filterShiftLabel");
+  if (!labelEl) return;
+
+  let weekStr = "";
+  if (DUTY_CURRENT_WEEK_START && DUTY_CURRENT_WEEK_END) {
+    weekStr = ` (Tuần: ${fmtDDMM(DUTY_CURRENT_WEEK_START)} - ${fmtDDMM(DUTY_CURRENT_WEEK_END)})`;
+  }
+
+  if (FILTER_SELECTED_SHIFTS.length === 0) {
+    labelEl.textContent = `Chọn ca rảnh...${weekStr}`;
+    labelEl.className = "text-gray-500 text-xs sm:text-sm";
+  } else {
+    labelEl.textContent = `Đã chọn ${FILTER_SELECTED_SHIFTS.length} ca rảnh${weekStr}`;
+    labelEl.className = "text-blue-700 font-semibold text-xs sm:text-sm";
+  }
+}
+
+function updateSelectAllHeaderState() {
+  const headerCb = document.getElementById("selectAllMemberTable");
+  if (!headerCb) return;
+
+  const tableCbs = document.querySelectorAll("#dutyMemberListTable .duty-member-table-checkbox");
+  if (tableCbs.length === 0) {
+    headerCb.checked = false;
+    return;
+  }
+
+  const allChecked = Array.from(tableCbs).every(cb => cb.checked);
+  headerCb.checked = allChecked;
+}

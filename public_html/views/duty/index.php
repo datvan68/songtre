@@ -12,6 +12,11 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$userId]);
 $role = $stmt->fetchColumn(); // admin | banchaphanh (hoặc role khác)
+
+// Cho phép admin chuyển đổi giao diện qua query param 'view'
+$viewMode = $_GET['view'] ?? '';
+$isAdmin = ($role === 'admin');
+$showAdminView = $isAdmin && ($viewMode !== 'user');
 ?>
 
 <section class="p-6 relative z-0" id="duty-app" data-role="<?= htmlspecialchars($role) ?>">
@@ -20,7 +25,7 @@ $role = $stmt->fetchColumn(); // admin | banchaphanh (hoặc role khác)
 
     <div class="relative z-0 isolate overflow-hidden md:overflow-visible">
 
-      <?php if ($role === 'admin'): ?>
+      <?php if ($showAdminView): ?>
         <?php include __DIR__ . '/admin.php'; ?>
       <?php else: ?>
         <?php include __DIR__ . '/user.php'; ?>
@@ -35,7 +40,7 @@ $role = $stmt->fetchColumn(); // admin | banchaphanh (hoặc role khác)
 <!-- ================= CORE ================= -->
 <script src="<?= BASE_URL ?>assets/js/duty/duty.core.js?v=<?= time() ?>"></script>
 
-<?php if ($role === 'admin'): ?>
+<?php if ($showAdminView): ?>
   <script src="<?= BASE_URL ?>assets/js/duty/duty.admin.js?v=<?= time() ?>"></script>
 <?php else: ?>
   <script src="<?= BASE_URL ?>assets/js/duty/duty.user.js?v=<?= time() ?>"></script>

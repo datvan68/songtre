@@ -29,7 +29,6 @@ $canPrint = can('achievements', 'print');
           <h1 class="font-heading font-bold leading-tight text-lg sm:text-2xl break-words">
             Quản lý Thành tích / Khen thưởng
           </h1>
-
         </div>
 
         <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end sm:gap-2 shrink-0">

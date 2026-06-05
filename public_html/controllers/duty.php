@@ -717,7 +717,9 @@ switch ($action) {
 
   case 'get_week_overview':
     try {
-      $weekId = get_current_duty_week_id($pdo);
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
 
       // lấy permission duty
       $permId = $pdo->query("
@@ -782,7 +784,9 @@ switch ($action) {
 
   case 'get_week_members':
     try {
-      $weekId = get_current_duty_week_id($pdo);
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
 
       // permission duty
       $permId = $pdo->query("
@@ -820,7 +824,7 @@ switch ($action) {
         ON da.user_id = u.id
        AND da.week_id = ?
 
-      GROUP BY u.id
+      GROUP BY u.id, m.fullname, u.fullname, u.username, u.avatar_url
       ORDER BY free_count DESC, fullname
     ");
 
@@ -1372,7 +1376,9 @@ switch ($action) {
 
   case 'get_free_stats':
     try {
-      $weekId = get_current_duty_week_id($pdo);
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
 
       // permission duty
       $permId = $pdo->query("
@@ -1592,9 +1598,9 @@ switch ($action) {
       $currentTotal = (float) $st->fetchColumn();
 
       $afterTotal = $isCopy ? ($currentTotal + $newScore) : ($currentTotal - $oldScore + $newScore);
-      if ($afterTotal > 3.0 + 1e-9) {
+      if ($afterTotal > 5.0 + 1e-9) {
         $pdo->rollBack();
-        json_err("Người này sẽ vượt quá 3 điểm/tuần");
+        json_err("Người này sẽ vượt quá 5 điểm/tuần");
       }
 
       // 4) APPLY
@@ -1726,9 +1732,9 @@ switch ($action) {
       $st->execute([$weekId, $targetUserId]);
       $total = (float) $st->fetchColumn();
 
-      if ($total + $addScore > 3.0 + 1e-9) {
+      if ($total + $addScore > 5.0 + 1e-9) {
         $pdo->rollBack();
-        json_err("Người này sẽ vượt quá 3 điểm/tuần");
+        json_err("Người này sẽ vượt quá 5 điểm/tuần");
       }
 
       $pdo->prepare("
@@ -1797,6 +1803,639 @@ switch ($action) {
       json_err('Lỗi lưu danh sách');
     }
 
+    break;
+
+  case 'get_user_availability':
+    auth_guard();
+    if (!can('duty', 'view')) {
+      json_err('Forbidden', 403);
+    }
+    $targetUid = (int) ($_GET['user_id'] ?? 0);
+    if (!$targetUid) {
+      json_err('Thiếu User ID');
+    }
+    $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+    $weekMeta = get_duty_week_by_offset($pdo, $offset);
+    $weekId = $weekMeta['week_id'];
+
+    // Lấy availability
+    $stmt = $pdo->prepare("
+      SELECT day, shift
+      FROM duty_availability
+      WHERE user_id = ? AND week_id = ?
+    ");
+    $stmt->execute([$targetUid, $weekId]);
+    $avail = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Lấy study
+    $stmt = $pdo->prepare("
+      SELECT day, shift
+      FROM duty_study_schedule
+      WHERE user_id = ? AND week_id = ? AND has_class = 1
+    ");
+    $stmt->execute([$targetUid, $weekId]);
+    $study = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Lấy assignments hiện tại
+    $stmt = $pdo->prepare("
+      SELECT id, day, shift, type, score
+      FROM duty_assignments
+      WHERE user_id = ? AND week_id = ?
+    ");
+    $stmt->execute([$targetUid, $weekId]);
+    $assigns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    json_ok([
+      'availability' => $avail,
+      'study' => $study,
+      'assignments' => $assigns
+    ]);
+    break;
+
+  case 'delete_user_assignments':
+    auth_guard();
+    if (!can('duty', 'update')) {
+      json_err('Forbidden', 403);
+    }
+    $targetUid = (int) ($_POST['user_id'] ?? $_GET['user_id'] ?? 0);
+    if (!$targetUid) {
+      json_err('Thiếu User ID');
+    }
+    $weekId = get_current_duty_week_id($pdo);
+
+    try {
+      $pdo->beginTransaction();
+      $stmt = $pdo->prepare("
+        DELETE FROM duty_assignments
+        WHERE user_id = ? AND week_id = ?
+      ");
+      $stmt->execute([$targetUid, $weekId]);
+      $deletedCount = $stmt->rowCount();
+
+      log_activity(
+        'delete',
+        'duty',
+        'assignment',
+        null,
+        "Admin xóa toàn bộ lịch trực của user ID $targetUid cho tuần ID $weekId (Xóa $deletedCount ca)"
+      );
+
+      $pdo->commit();
+      json_ok(['deleted' => $deletedCount]);
+    } catch (Throwable $e) {
+      $pdo->rollBack();
+      json_err('Lỗi xóa lịch trực thành viên: ' . $e->getMessage());
+    }
+    break;
+
+  case 'get_week_availability_matrix':
+    try {
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
+
+      // permission duty
+      $permId = $pdo->query("SELECT id FROM permissions WHERE code='duty' LIMIT 1")->fetchColumn();
+      if (!$permId) {
+        json_err('Missing duty permission');
+      }
+
+      // Lấy toàn bộ lịch rảnh của các user có quyền duty trong tuần này
+      $stmt = $pdo->prepare("
+        SELECT da.user_id, da.day, da.shift
+        FROM duty_availability da
+        JOIN user_permissions up ON up.user_id = da.user_id
+        WHERE da.week_id = ? AND up.permission_id = ? AND up.can_view = 1
+      ");
+      $stmt->execute([$weekId, $permId]);
+      $availabilities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      // Lấy toàn bộ lịch học của các user có quyền duty trong tuần này
+      $stmt = $pdo->prepare("
+        SELECT ds.user_id, ds.day, ds.shift
+        FROM duty_study_schedule ds
+        JOIN user_permissions up ON up.user_id = ds.user_id
+        WHERE ds.week_id = ? AND ds.has_class = 1 AND up.permission_id = ? AND up.can_view = 1
+      ");
+      $stmt->execute([$weekId, $permId]);
+      $studySchedules = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      $matrix = [];
+      // Khởi tạo cho toàn bộ user có quyền duty để FE có đủ danh sách
+      $stmt = $pdo->prepare("
+        SELECT u.id
+        FROM users u
+        JOIN user_permissions up ON up.user_id = u.id
+        WHERE up.permission_id = ? AND up.can_view = 1
+      ");
+      $stmt->execute([$permId]);
+      $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+      
+      foreach ($userIds as $uid) {
+        $matrix[(int)$uid] = [
+          'availability' => [],
+          'study' => []
+        ];
+      }
+
+      foreach ($availabilities as $a) {
+        $uid = (int)$a['user_id'];
+        if (isset($matrix[$uid])) {
+          $matrix[$uid]['availability'][] = [
+            'day' => (int)$a['day'],
+            'shift' => $a['shift']
+          ];
+        }
+      }
+
+      foreach ($studySchedules as $s) {
+        $uid = (int)$s['user_id'];
+        if (isset($matrix[$uid])) {
+          $matrix[$uid]['study'][] = [
+            'day' => (int)$s['day'],
+            'shift' => $s['shift']
+          ];
+        }
+      }
+
+      json_ok($matrix);
+    } catch (Throwable $e) {
+      json_err('Lỗi load ma trận lịch tuần: ' . $e->getMessage());
+    }
+    break;
+
+  case 'suggest_week':
+    try {
+      $input = json_decode(file_get_contents('php://input'), true);
+      $userIds = $input['user_ids'] ?? [];
+      if (!is_array($userIds) || empty($userIds))
+        json_err('Chưa chọn thành viên để gợi ý');
+
+      $userIds = array_values(array_unique(array_map('intval', $userIds)));
+      if (count($userIds) === 0)
+        json_err('Danh sách user không hợp lệ');
+
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
+
+      $MIN_PER_SHIFT = 2;
+      $MAX_PER_SHIFT = 3;
+      $MAX_SCORE_PER_USER = 3.0;
+
+      $dayMap = [2 => 'T2', 3 => 'T3', 4 => 'T4', 5 => 'T5', 6 => 'T6'];
+      $shiftMap = ['morning' => 'sang', 'afternoon' => 'chieu'];
+
+      $score = [];
+      foreach ($userIds as $uid)
+        $score[$uid] = 0.0;
+
+      /* =========================
+         PREFETCH STUDY + AVAIL
+      ========================= */
+      $study = [];
+      $st = $pdo->prepare("
+      SELECT user_id, day, shift
+      FROM duty_study_schedule
+      WHERE week_id=? AND has_class=1
+        AND user_id IN (" . implode(',', array_fill(0, count($userIds), '?')) . ")
+    ");
+      $st->execute(array_merge([$weekId], $userIds));
+      foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $u = (int) $r['user_id'];
+        $d = (int) $r['day'];
+        $sh = (string) $r['shift'];
+        $study[$u][$d][$sh] = true;
+      }
+
+      $avail = [];
+      $st = $pdo->prepare("
+      SELECT user_id, day, shift
+      FROM duty_availability
+      WHERE week_id=?
+        AND user_id IN (" . implode(',', array_fill(0, count($userIds), '?')) . ")
+    ");
+      $st->execute(array_merge([$weekId], $userIds));
+      foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $u = (int) $r['user_id'];
+        $d = (int) $r['day'];
+        $sh = (string) $r['shift'];
+        $avail[$u][$d][$sh] = true;
+      }
+
+      /* =========================
+         HELPERS ON RAM
+      ========================= */
+      $assignmentsDraft = [];
+
+      $countSlot = function (string $dayEnum, string $shift) use (&$assignmentsDraft): int {
+        $cnt = 0;
+        foreach ($assignmentsDraft as $a) {
+          if ($a['day'] === $dayEnum && $a['shift'] === $shift) {
+            $cnt++;
+          }
+        }
+        return $cnt;
+      };
+
+      $hasAssignment = function (int $uid, string $dayEnum, string $shift) use (&$assignmentsDraft): bool {
+        foreach ($assignmentsDraft as $a) {
+          if ($a['user_id'] === $uid && $a['day'] === $dayEnum && $a['shift'] === $shift) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      $addAssignment = function (int $uid, string $dayEnum, string $shift, string $type, float $addScore) use (&$assignmentsDraft, &$score, $MAX_SCORE_PER_USER) {
+        if (!isset($score[$uid]))
+          return false;
+        if (($score[$uid] ?? 0) + $addScore > $MAX_SCORE_PER_USER)
+          return false;
+
+        $assignmentsDraft[] = [
+          'user_id' => $uid,
+          'day' => $dayEnum,
+          'shift' => $shift,
+          'type' => $type,
+          'score' => $addScore
+        ];
+
+        $score[$uid] += $addScore;
+        return true;
+      };
+
+      $stableSort = function (array $uids, string $seed) {
+        usort($uids, function ($a, $b) use ($seed) {
+          $ha = sprintf('%u', crc32($seed . '-' . $a));
+          $hb = sprintf('%u', crc32($seed . '-' . $b));
+          if ($ha === $hb)
+            return $a <=> $b;
+          return ($ha < $hb) ? -1 : 1;
+        });
+        return $uids;
+      };
+
+      $sortUsersByScoreAsc = function () use (&$userIds, &$score) {
+        $tmp = $userIds;
+        usort($tmp, function ($a, $b) use (&$score) {
+          $sa = $score[$a] ?? 0.0;
+          $sb = $score[$b] ?? 0.0;
+          if ($sa === $sb)
+            return $a <=> $b;
+          return ($sa < $sb) ? -1 : 1;
+        });
+        return $tmp;
+      };
+
+      $canMain = function (int $uid, int $dayNum, string $availShift) use (&$avail, &$study): bool {
+        if (empty($avail[$uid][$dayNum][$availShift]))
+          return false;
+        if (!empty($study[$uid][$dayNum][$availShift]))
+          return false;
+        return true;
+      };
+
+      $canBreak = function (int $uid, int $dayNum, string $availShift) use (&$avail, &$study): bool {
+        if ($availShift === 'morning') {
+          $hasStudy = !empty($study[$uid][$dayNum]['morning']);
+          $hasBreak = !empty($avail[$uid][$dayNum]['break_morning']);
+          return ($hasStudy || $hasBreak);
+        } else {
+          $hasStudy = !empty($study[$uid][$dayNum]['afternoon']);
+          $hasBreak = !empty($avail[$uid][$dayNum]['break_afternoon']);
+          return ($hasStudy || $hasBreak);
+        }
+      };
+
+      $mainCells = [];
+      foreach ($dayMap as $dayNum => $dayEnum) {
+        foreach ($shiftMap as $availShift => $mainShiftEnum) {
+          $mainCells[] = [
+            'kind' => 'main',
+            'dayNum' => $dayNum,
+            'dayEnum' => $dayEnum,
+            'availShift' => $availShift,
+            'shiftEnum' => $mainShiftEnum,
+            'type' => 'thuong',
+            'addScore' => 1.0
+          ];
+        }
+      }
+
+      $breakCells = [];
+      foreach ($dayMap as $dayNum => $dayEnum) {
+        foreach ($shiftMap as $availShift => $mainShiftEnum) {
+          $breakCells[] = [
+            'kind' => 'break',
+            'dayNum' => $dayNum,
+            'dayEnum' => $dayEnum,
+            'availShift' => $availShift,
+            'shiftEnum' => ($availShift === 'morning' ? 'rachoi_s' : 'rachoi_c'),
+            'type' => 'rachoi',
+            'addScore' => 0.5
+          ];
+        }
+      }
+
+      $fillBaseline = function (array $cells, callable $canFn, string $seedPrefix) use ($weekId, $MIN_PER_SHIFT, $countSlot, $sortUsersByScoreAsc, $stableSort, $hasAssignment, $addAssignment, &$score) {
+        for ($target = 1; $target <= $MIN_PER_SHIFT; $target++) {
+          $ordered = $cells;
+          usort($ordered, function ($a, $b) use ($weekId, $countSlot, $target) {
+            $ca = $countSlot($a['dayEnum'], $a['shiftEnum']);
+            $cb = $countSlot($b['dayEnum'], $b['shiftEnum']);
+            $ra = ($ca < $target) ? 0 : 1;
+            $rb = ($cb < $target) ? 0 : 1;
+            if ($ra !== $rb)
+              return $ra <=> $rb;
+            if ($ca !== $cb)
+              return $ca <=> $cb;
+            $ha = sprintf('%u', crc32("cell-{$weekId}-{$a['dayEnum']}-{$a['shiftEnum']}"));
+            $hb = sprintf('%u', crc32("cell-{$weekId}-{$b['dayEnum']}-{$b['shiftEnum']}"));
+            if ($ha === $hb)
+              return 0;
+            return ($ha < $hb) ? -1 : 1;
+          });
+
+          foreach ($ordered as $cell) {
+            while (true) {
+              $cur = $countSlot($cell['dayEnum'], $cell['shiftEnum']);
+              if ($cur >= $target)
+                break;
+
+              $uids = $sortUsersByScoreAsc();
+              $uids = $stableSort($uids, "{$seedPrefix}-{$target}-{$weekId}-{$cell['dayEnum']}-{$cell['shiftEnum']}");
+
+              $picked = false;
+              foreach ($uids as $uid) {
+                if (($score[$uid] ?? 0) >= 3.0)
+                  continue;
+                if (!$canFn($uid, $cell['dayNum'], $cell['availShift']))
+                  continue;
+                if ($hasAssignment($uid, $cell['dayEnum'], $cell['shiftEnum']))
+                  continue;
+
+                if ($addAssignment($uid, $cell['dayEnum'], $cell['shiftEnum'], $cell['type'], $cell['addScore'])) {
+                  $picked = true;
+                  break;
+                }
+              }
+              if (!$picked)
+                break;
+            }
+          }
+        }
+      };
+
+      // 1) Baseline Main
+      $fillBaseline($mainCells, $canMain, 'main');
+
+      // 2) Bù Main
+      $pickBestMainForUser = function (int $uid) use (&$mainCells, $weekId, $countSlot, $MIN_PER_SHIFT, $MAX_PER_SHIFT, $canMain, $hasAssignment) {
+        $cands = [];
+        foreach ($mainCells as $cell) {
+          if (!$canMain($uid, $cell['dayNum'], $cell['availShift']))
+            continue;
+          $cur = $countSlot($cell['dayEnum'], $cell['shiftEnum']);
+          if ($cur >= $MAX_PER_SHIFT)
+            continue;
+          if ($hasAssignment($uid, $cell['dayEnum'], $cell['shiftEnum']))
+            continue;
+          $rank = ($cur < $MIN_PER_SHIFT) ? 0 : 1;
+          $cands[] = [$rank, $cur, $cell];
+        }
+        if (!$cands)
+          return null;
+        usort($cands, function ($a, $b) use ($uid, $weekId) {
+          if ($a[0] !== $b[0])
+            return $a[0] <=> $b[0];
+          if ($a[1] !== $b[1])
+            return $a[1] <=> $b[1];
+          $ha = sprintf('%u', crc32("u{$uid}-{$weekId}-{$a[2]['dayEnum']}-{$a[2]['shiftEnum']}"));
+          $hb = sprintf('%u', crc32("u{$uid}-{$weekId}-{$b[2]['dayEnum']}-{$b[2]['shiftEnum']}"));
+          if ($ha === $hb)
+            return 0;
+          return ($ha < $hb) ? -1 : 1;
+        });
+        return $cands[0][2];
+      };
+
+      $guard = 0;
+      while (true) {
+        $guard++;
+        if ($guard > 4000)
+          break;
+        $changed = false;
+        $uids = $sortUsersByScoreAsc();
+        foreach ($uids as $uid) {
+          if (($score[$uid] ?? 0) >= 3.0)
+            continue;
+
+          $cell = $pickBestMainForUser($uid);
+          if ($cell) {
+            if ($addAssignment($uid, $cell['dayEnum'], $cell['shiftEnum'], $cell['type'], $cell['addScore'])) {
+              $changed = true;
+            }
+          }
+        }
+        if (!$changed)
+          break;
+      }
+
+      // 3) Baseline Break
+      $fillBaseline($breakCells, $canBreak, 'break');
+
+      // 4) Bù Break
+      $pickBestBreakForUser = function (int $uid) use (&$breakCells, $weekId, $countSlot, $MIN_PER_SHIFT, $MAX_PER_SHIFT, $canBreak, $hasAssignment) {
+        $cands = [];
+        foreach ($breakCells as $cell) {
+          if (!$canBreak($uid, $cell['dayNum'], $cell['availShift']))
+            continue;
+          $cur = $countSlot($cell['dayEnum'], $cell['shiftEnum']);
+          if ($cur >= $MAX_PER_SHIFT)
+            continue;
+          if ($hasAssignment($uid, $cell['dayEnum'], $cell['shiftEnum']))
+            continue;
+          $rank = ($cur < $MIN_PER_SHIFT) ? 0 : 1;
+          $cands[] = [$rank, $cur, $cell];
+        }
+        if (!$cands)
+          return null;
+        usort($cands, function ($a, $b) use ($uid, $weekId) {
+          if ($a[0] !== $b[0])
+            return $a[0] <=> $b[0];
+          if ($a[1] !== $b[1])
+            return $a[1] <=> $b[1];
+          $ha = sprintf('%u', crc32("ub{$uid}-{$weekId}-{$a[2]['dayEnum']}-{$a[2]['shiftEnum']}"));
+          $hb = sprintf('%u', crc32("ub{$uid}-{$weekId}-{$b[2]['dayEnum']}-{$b[2]['shiftEnum']}"));
+          if ($ha === $hb)
+            return 0;
+          return ($ha < $hb) ? -1 : 1;
+        });
+        return $cands[0][2];
+      };
+
+      $guard = 0;
+      while (true) {
+        $guard++;
+        if ($guard > 6000)
+          break;
+        $changed = false;
+        $uids = $sortUsersByScoreAsc();
+        foreach ($uids as $uid) {
+          if (($score[$uid] ?? 0) >= 3.0)
+            continue;
+
+          $cell = $pickBestBreakForUser($uid);
+          if ($cell) {
+            if ($addAssignment($uid, $cell['dayEnum'], $cell['shiftEnum'], $cell['type'], $cell['addScore'])) {
+              $changed = true;
+            }
+          }
+        }
+        if (!$changed)
+          break;
+      }
+
+      // 5) Top-up 2->3
+      $allCells = array_merge($mainCells, $breakCells);
+      $anyCellUnderMin = function () use ($allCells, $countSlot, $MIN_PER_SHIFT) {
+        foreach ($allCells as $cell) {
+          if ($countSlot($cell['dayEnum'], $cell['shiftEnum']) < $MIN_PER_SHIFT)
+            return true;
+        }
+        return false;
+      };
+
+      if (!$anyCellUnderMin()) {
+        // top-up MAIN
+        foreach ($mainCells as $cell) {
+          $cur = $countSlot($cell['dayEnum'], $cell['shiftEnum']);
+          if ($cur < 2 || $cur >= 3)
+            continue;
+
+          $uids = $sortUsersByScoreAsc();
+          $uids = $stableSort($uids, "top-main-{$weekId}-{$cell['dayEnum']}-{$cell['shiftEnum']}");
+          foreach ($uids as $uid) {
+            if (($score[$uid] ?? 0) >= 3.0)
+              continue;
+            if (!$canMain($uid, $cell['dayNum'], $cell['availShift']))
+              continue;
+            if ($hasAssignment($uid, $cell['dayEnum'], $cell['shiftEnum']))
+              continue;
+
+            if ($addAssignment($uid, $cell['dayEnum'], $cell['shiftEnum'], 'thuong', 1.0))
+              break;
+          }
+        }
+
+        // top-up BREAK
+        foreach ($breakCells as $cell) {
+          $cur = $countSlot($cell['dayEnum'], $cell['shiftEnum']);
+          if ($cur < 2 || $cur >= 3)
+            continue;
+
+          $uids = $sortUsersByScoreAsc();
+          $uids = $stableSort($uids, "top-break-{$weekId}-{$cell['dayEnum']}-{$cell['shiftEnum']}");
+          foreach ($uids as $uid) {
+            if (($score[$uid] ?? 0) >= 3.0)
+              continue;
+            if (!$canBreak($uid, $cell['dayNum'], $cell['availShift']))
+              continue;
+            if ($hasAssignment($uid, $cell['dayEnum'], $cell['shiftEnum']))
+              continue;
+
+            if ($addAssignment($uid, $cell['dayEnum'], $cell['shiftEnum'], 'rachoi', 0.5))
+              break;
+          }
+        }
+      }
+
+      // Map fullname của các user
+      $userNames = [];
+      if (!empty($userIds)) {
+        $st = $pdo->prepare("
+          SELECT u.id, COALESCE(m.fullname, u.fullname, u.username) AS name
+          FROM users u
+          LEFT JOIN members m ON m.user_id = u.id
+          WHERE u.id IN (" . implode(',', array_fill(0, count($userIds), '?')) . ")
+        ");
+        $st->execute($userIds);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+          $userNames[(int)$row['id']] = $row['name'];
+        }
+      }
+
+      foreach ($assignmentsDraft as &$a) {
+        $a['fullname'] = $userNames[$a['user_id']] ?? 'Không tên';
+      }
+      unset($a);
+
+      json_ok([
+        'week_id' => $weekId,
+        'assignments' => $assignmentsDraft,
+        'score' => $score
+      ]);
+
+    } catch (Throwable $e) {
+      json_err('Lỗi gợi ý lịch trực: ' . $e->getMessage());
+    }
+    break;
+
+  case 'save_week_schedule':
+    auth_guard();
+    if (!can('duty', 'update')) {
+      json_err('Forbidden', 403);
+    }
+
+    try {
+      $data = json_decode(file_get_contents('php://input'), true);
+      $items = $data['items'] ?? [];
+      $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 1;
+      $weekMeta = get_duty_week_by_offset($pdo, $offset);
+      $weekId = $weekMeta['week_id'];
+
+      if (!is_array($items)) {
+        json_err('Dữ liệu lưu không hợp lệ');
+      }
+
+      $validDays = ['T2', 'T3', 'T4', 'T5', 'T6'];
+      $validShifts = ['sang', 'chieu', 'rachoi_s', 'rachoi_c'];
+
+      $pdo->beginTransaction();
+
+      // Xóa tất cả các ca trực cũ của tuần tương ứng
+      $pdo->prepare("DELETE FROM duty_assignments WHERE week_id=?")->execute([$weekId]);
+
+      // Chèn các ca trực mới
+      $insert = $pdo->prepare("
+        INSERT INTO duty_assignments (week_id, user_id, day, shift, type, score)
+        VALUES (?, ?, ?, ?, ?, ?)
+      ");
+
+      foreach ($items as $it) {
+        $uid = (int)($it['user_id'] ?? 0);
+        $day = (string)($it['day'] ?? '');
+        $shift = (string)($it['shift'] ?? '');
+        $type = (string)($it['type'] ?? 'thuong');
+        $scoreVal = (float)($it['score'] ?? 1.0);
+
+        if (!$uid || !in_array($day, $validDays, true) || !in_array($shift, $validShifts, true)) {
+          continue; // Bỏ qua phần tử lỗi
+        }
+
+        $insert->execute([$weekId, $uid, $day, $shift, $type, $scoreVal]);
+      }
+
+      log_activity('update', 'duty', 'assignment', null, "Admin lưu chính thức lịch trực tuần ID $weekId");
+      $pdo->commit();
+      json_ok();
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+      }
+      json_err('Lỗi lưu lịch trực chính thức: ' . $e->getMessage());
+    }
     break;
 
   default:

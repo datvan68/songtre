@@ -38,13 +38,20 @@ $weekRange = $days[0]['date'] . ' – ' . $days[4]['date'];
                     <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
 
                         <!-- LEFT -->
-                        <div>
-                            <h1 class="text-2xl font-bold text-gray-800">
-                                LỊCH TRỰC BAN CHẤP HÀNH
-                            </h1>
-                            <p class="text-sm text-gray-500 mt-1">
-                                Đăng ký lịch rảnh – khai báo lịch học – xem lịch trực
-                            </p>
+                        <div class="flex items-center gap-3">
+                            <div>
+                                <h1 class="text-2xl font-bold text-gray-800">
+                                    LỊCH TRỰC BAN CHẤP HÀNH
+                                </h1>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Đăng ký lịch rảnh – khai báo lịch học – xem lịch trực
+                                </p>
+                            </div>
+                            <?php if (isset($isAdmin) && $isAdmin): ?>
+                                <a href="index.php?p=duty" class="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs font-semibold rounded-xl border border-purple-200 shadow-sm transition-all duration-200">
+                                    Giao diện quản lý
+                                </a>
+                            <?php endif; ?>
                         </div>
 
                         <!-- RIGHT -->
