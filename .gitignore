@@ -25,7 +25,6 @@ vendor/
 node_modules/
 
 # Agent configuration (Bỏ qua cấu hình AI Agents và cache)
-.agents/
 .gemini/
 .antigravity/
 
