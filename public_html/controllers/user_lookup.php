@@ -712,6 +712,134 @@ try {
             }
 
 
+            /* ===== 12) VIOLATIONS (Kỷ luật - Vi phạm) ===== */
+            $violationsForbidden = false;
+            $violations = [];
+
+            $isSelf = ((int) $targetUid === (int) $GLOBALS['uid']);
+            $canViolationsView = false;
+            if (function_exists('can')) {
+                $canViolationsView = can('violations', 'view');
+            }
+
+            if (!$canViolationsView && !$isSelf) {
+                $violationsForbidden = true;
+            } else if ($memberIdLookup > 0) {
+                $stmt = $pdo->prepare("
+                    SELECT
+                        v.id,
+                        v.reason,
+                        v.treatment,
+                        v.created_at,
+                        COALESCE(m.fullname, uc.fullname, uc.username) AS creator_name
+                    FROM violations v
+                    LEFT JOIN users uc ON uc.id = v.created_by
+                    LEFT JOIN members m ON m.user_id = uc.id
+                    WHERE v.member_id = ?
+                    ORDER BY v.created_at DESC
+                    LIMIT 50
+                ");
+                $stmt->execute([$memberIdLookup]);
+                $violations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+
+            /* ===== 13) FINANCE USER DETAILS (Đã đóng và Chưa đóng) ===== */
+            $financeUserPaid = [];
+            $financeUserUnpaid = [];
+
+            if ($memberIdLookup > 0) {
+                $className = trim((string)($user['class_name'] ?? $user['class_text'] ?? ''));
+
+                $sqlPaid = "
+                    SELECT DISTINCT
+                        t.id AS transaction_id,
+                        t.item_name,
+                        t.amount,
+                        t.trans_date,
+                        t.method,
+                        t.status,
+                        'Cá nhân' AS scope
+                    FROM finance_transaction_participants p
+                    JOIN finance_transactions t ON t.id = p.transaction_id
+                    WHERE p.member_id = ?
+                      AND t.type = 'income'
+                      AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
+                ";
+                $paidParams = [$memberIdLookup];
+
+                if ($className !== '') {
+                    $sqlPaid .= "
+                        UNION
+                        SELECT DISTINCT
+                            t.id AS transaction_id,
+                            t.item_name,
+                            t.amount,
+                            t.trans_date,
+                            t.method,
+                            t.status,
+                            'Cả lớp' AS scope
+                        FROM finance_transactions t
+                        WHERE t.class_text = ?
+                          AND t.type = 'income'
+                          AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
+                    ";
+                    $paidParams[] = $className;
+                }
+
+                $sqlPaid .= " ORDER BY trans_date DESC";
+                $stmtPaid = $pdo->prepare($sqlPaid);
+                $stmtPaid->execute($paidParams);
+                $financeUserPaid = $stmtPaid->fetchAll(PDO::FETCH_ASSOC);
+
+                $mType = strtolower(trim((string)($user['member_type'] ?? '')));
+                $isDV = in_array($mType, ['member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan']) ? 1 : 0;
+                $isTN = in_array($mType, ['youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh']) ? 1 : 0;
+
+                $sqlUnpaid = "
+                    SELECT 
+                        fi.id,
+                        fi.name AS item_name,
+                        COALESCE(fi.target_type, 'tat_ca') AS target_type
+                    FROM finance_items fi
+                    WHERE fi.type = 'income'
+                      AND fi.is_active = 1
+                      AND (
+                          fi.target_type = 'tat_ca'
+                          OR (fi.target_type = 'doan_vien' AND ? = 1)
+                          OR (fi.target_type = 'thanh_nien' AND ? = 1)
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM finance_transaction_participants ftp
+                          JOIN finance_transactions t ON t.id = ftp.transaction_id
+                          WHERE ftp.member_id = ?
+                            AND t.type = 'income'
+                            AND t.item_name = fi.name
+                            AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
+                      )
+                ";
+                $unpaidParams = [$isDV, $isTN, $memberIdLookup];
+
+                if ($className !== '') {
+                    $sqlUnpaid .= "
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM finance_transactions t
+                            WHERE t.type = 'income'
+                              AND t.class_text = ?
+                              AND t.item_name = fi.name
+                              AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
+                        )
+                    ";
+                    $unpaidParams[] = $className;
+                }
+
+                $sqlUnpaid .= " ORDER BY fi.name ASC";
+                $stmtUnpaid = $pdo->prepare($sqlUnpaid);
+                $stmtUnpaid->execute($unpaidParams);
+                $financeUserUnpaid = $stmtUnpaid->fetchAll(PDO::FETCH_ASSOC);
+            }
+
             /* ✅ TRẢ 1 LẦN DUY NHẤT Ở CUỐI */
             json_ok([
                 'user' => $user,
@@ -743,6 +871,11 @@ try {
                 'achievement_stats' => $achievementStats,
                 'achievements' => $achievements,
                 'achievements_forbidden' => $achievementsForbidden,
+
+                'violations' => $violations,
+                'violations_forbidden' => $violationsForbidden,
+                'finance_user_paid' => $financeUserPaid,
+                'finance_user_unpaid' => $financeUserUnpaid,
             ]);
         }
 

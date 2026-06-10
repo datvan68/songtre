@@ -1,3 +1,8 @@
+// Polyfill String.prototype.contains cho các SDK bên thứ ba (như Zalo SDK ztr.js)
+if (!String.prototype.contains) {
+  String.prototype.contains = String.prototype.includes;
+}
+
 function api(path, options = {}) {
   const base = window.BASE_URL.replace(/\/+$/, "");
   const p = path.replace(/^\/+/, "");

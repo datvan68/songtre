@@ -21,16 +21,30 @@ try {
       $roleId = $cu['role_id'] ?? 0;
 
       if ($roleId > 0) {
-        // give view + create to this user's role (idempotent)
+        // give view + create to this user's role (force update if existed with old values)
         $pdo->prepare("
-          INSERT IGNORE INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+          INSERT INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
           VALUES (?, ?, 1, 1, 0, 0, 0, 0)
+          ON DUPLICATE KEY UPDATE
+            can_view = VALUES(can_view),
+            can_create = VALUES(can_create),
+            can_update = VALUES(can_update),
+            can_review = VALUES(can_review),
+            can_delete = VALUES(can_delete),
+            can_print = VALUES(can_print)
         ")->execute([$roleId, $permId]);
       }
       if ($uid > 0) {
         $pdo->prepare("
-          INSERT IGNORE INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+          INSERT INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
           VALUES (?, ?, 1, 1, 0, 0, 0, 0)
+          ON DUPLICATE KEY UPDATE
+            can_view = VALUES(can_view),
+            can_create = VALUES(can_create),
+            can_update = VALUES(can_update),
+            can_review = VALUES(can_review),
+            can_delete = VALUES(can_delete),
+            can_print = VALUES(can_print)
         ")->execute([$uid, $permId]);
       }
     }
@@ -683,7 +697,7 @@ $canBaocaoDelete = function_exists('can') ? can('baocaophongtrao', 'delete') : t
         const cnt = document.getElementById('movement-count');
         if (cnt) {
           const n = movements.length;
-          cnt.textContent = n + (n > 5 ? ' (cuộn để xem thêm)' : '') + ' phong trào';
+          cnt.textContent = n + ' phong trào';
         }
     }
 
@@ -763,29 +777,27 @@ $canBaocaoDelete = function_exists('can') ? can('baocaophongtrao', 'delete') : t
         const statsEl = document.getElementById('manage-stats-inline');
 
         if (tab === 'bao-cao') {
-            baoContent.classList.remove('hidden');
-            quanContent.classList.add('hidden');
+            if (baoContent) baoContent.classList.remove('hidden');
+            if (quanContent) quanContent.classList.add('hidden');
 
-            btnBao.classList.add('active');
-            btnQuan.classList.remove('active');
+            if (btnBao) btnBao.classList.add('active');
+            if (btnQuan) btnQuan.classList.remove('active');
 
             if (titleEl) titleEl.textContent = 'Báo cáo hoạt động phong trào';
             if (statsEl) statsEl.classList.add('hidden');
 
-            // ensure movements loaded for sidebar
-            if (!movements || movements.length === 0) {
-                fetchMovements();
-            } else {
-                renderMovements();
-            }
-            // render personal list when entering
+            // auto load phong trào list in sidebar when entering the tab / page
+            fetchMovements();
+            // ensure my reports are loaded/fresh when entering the tab
+            fetchMyReports();
+            // render personal list when entering (will be updated by fetch if needed)
             renderMyReports();
         } else {
-            baoContent.classList.add('hidden');
-            quanContent.classList.remove('hidden');
+            if (baoContent) baoContent.classList.add('hidden');
+            if (quanContent) quanContent.classList.remove('hidden');
 
-            btnQuan.classList.add('active');
-            btnBao.classList.remove('active');
+            if (btnQuan) btnQuan.classList.add('active');
+            if (btnBao) btnBao.classList.remove('active');
 
             if (titleEl) titleEl.textContent = 'Quản lý báo cáo';
             if (statsEl) statsEl.classList.remove('hidden');

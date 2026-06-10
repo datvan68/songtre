@@ -388,11 +388,40 @@
   }
 
   async function renderFinance(panelEl) {
+    if (!window.META) {
+      try {
+        const res = await fetch("controllers/finance.php?action=meta");
+        const json = await res.json();
+        if (json.ok) {
+          window.META = json.data;
+        }
+      } catch (e) {
+        console.error("Lỗi tải META trong statistics/finance:", e);
+      }
+    }
+
     const schoolYears = window.META?.school_years || [];
     const semesters = window.META?.semesters || [];
+    const departments = window.META?.departments || [];
+    const courses = window.META?.courses || [];
 
-    const syOptions = `<option value="">Tất cả năm học</option>` + schoolYears.map(sy => `<option value="${sy.id}">${esc(sy.name)}</option>`).join("");
-    const semOptions = `<option value="">Tất cả học kỳ</option>` + semesters.map(sem => `<option value="${sem.id}">${esc(sem.name)}</option>`).join("");
+    const unpaidState = {
+      page: 1,
+      pageSize: 10,
+      rows: [],
+      total: 0,
+      totalPages: 1,
+      itemName: "",
+      schoolYearId: "",
+      semester: "",
+      deptId: "",
+      courseId: "",
+      classText: "",
+      targetType: "tat_ca"
+    };
+
+    const syOptions = `<option value="">Tất cả năm học</option>` + schoolYears.map(sy => `<option value="${sy.id}">${esc(sy.year_label || sy.name)}</option>`).join("");
+    const semOptions = `<option value="">Tất cả học kỳ</option>` + semesters.map(sem => `<option value="${sem.code || sem.id}">${esc(sem.label || sem.name)}</option>`).join("");
 
     panelEl.innerHTML = `
       <div class="mb-6">
@@ -455,14 +484,19 @@
       <div id="fin-insights" class="mb-6"></div>
 
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
           <span class="font-semibold text-gray-900">Chi tiết các phiếu giao dịch</span>
-          <select id="finPageSize" class="border rounded-lg px-2 py-1 text-xs">
-            <option value="10">10 dòng / trang</option>
-            <option value="15">15 dòng / trang</option>
-            <option value="20">20 dòng / trang</option>
-            <option value="50">50 dòng / trang</option>
-          </select>
+          <div class="flex items-center gap-2">
+            <button id="finBtnExcelDetail" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i> Xuất Excel
+            </button>
+            <select id="finPageSize" class="border rounded-lg px-2 py-1 text-xs">
+              <option value="10">10 dòng / trang</option>
+              <option value="15">15 dòng / trang</option>
+              <option value="20">20 dòng / trang</option>
+              <option value="50">50 dòng / trang</option>
+            </select>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -473,6 +507,100 @@
           </table>
         </div>
         <div id="fin-pagination" class="mt-4"></div>
+      </div>
+
+      <!-- Box Theo dõi thành viên chưa đóng tiền -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4 border-b pb-3 border-gray-50 flex-wrap gap-2">
+          <div>
+            <h3 class="font-semibold text-gray-900 text-lg flex items-center gap-2">
+              <i data-lucide="alert-circle" class="w-5 h-5 text-rose-500"></i> Theo dõi thành viên chưa đóng tiền
+            </h3>
+            <p class="text-xs text-gray-500 mt-0.5">Chọn một khoản thu cụ thể để đối chiếu danh sách các cá nhân chưa đóng.</p>
+          </div>
+          <button id="unpaidBtnExport" disabled
+            class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-semibold flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <i data-lucide="download" class="w-4 h-4"></i> Xuất Excel chưa đóng
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Khoản thu <span class="text-rose-500">*</span></label>
+            <select id="unpaidIncomeItem" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">-- Chọn khoản thu --</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Năm học</label>
+            <select id="unpaidSchoolYear" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              ${syOptions}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Học kỳ</label>
+            <select id="unpaidSemester" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              ${semOptions}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Phân loại</label>
+            <select id="unpaidTargetType" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="tat_ca">Tất cả</option>
+              <option value="doan_vien">Đoàn viên</option>
+              <option value="thanh_nien">Thanh niên</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Khoa / Phòng</label>
+            <select id="unpaidDept" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Tất cả khoa</option>
+              ${departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Khóa</label>
+            <select id="unpaidCourse" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Tất cả khóa</option>
+              ${courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Lớp</label>
+            <input id="unpaidClassText" type="text" placeholder="Gõ tên lớp..." class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 mb-4">
+          <button id="unpaidBtnSearch" class="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition">Tìm kiếm</button>
+          <button id="unpaidBtnReset" class="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50 text-gray-700 text-sm font-semibold">Làm mới</button>
+        </div>
+
+        <div id="unpaid-loading" class="hidden mb-4 text-sm text-gray-500">Đang tải danh sách thành viên chưa đóng...</div>
+        
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+              <tr class="text-left font-semibold">
+                <th class="px-4 py-3 text-center w-[8%]">STT</th>
+                <th class="px-4 py-3 text-left w-[25%]">Họ và tên</th>
+                <th class="px-4 py-3 text-center w-[15%]">MSSV</th>
+                <th class="px-4 py-3 text-left w-[15%]">Lớp</th>
+                <th class="px-4 py-3 text-left w-[22%]">Khoa / Phòng</th>
+                <th class="px-4 py-3 text-center w-[15%]">Phân loại</th>
+              </tr>
+            </thead>
+            <tbody id="unpaid-body" class="divide-y divide-gray-100">
+              <tr>
+                <td colspan="6" class="px-4 py-10 text-center text-gray-500 italic">Vui lòng chọn khoản thu và bấm Tìm kiếm.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="unpaid-pagination" class="mt-4"></div>
       </div>
     `;
 
@@ -507,6 +635,10 @@
     });
 
     btnExport.addEventListener("click", () => window.exportFinanceReport());
+    const btnExcelDetail = panelEl.querySelector("#finBtnExcelDetail");
+    if (btnExcelDetail) {
+      btnExcelDetail.addEventListener("click", () => window.exportFinanceReport());
+    }
 
     search.addEventListener("input", () => {
       state.search = search.value.trim();
@@ -526,6 +658,206 @@
       state.currentPage = p;
       renderTable(panelEl);
     };
+
+    // -------------------------------------------------
+    // LOGIC CHO BẢNG CHƯA ĐÓNG TIỀN
+    // -------------------------------------------------
+    const unpaidItemSel = panelEl.querySelector("#unpaidIncomeItem");
+    const unpaidSchoolYearSel = panelEl.querySelector("#unpaidSchoolYear");
+    const unpaidSemesterSel = panelEl.querySelector("#unpaidSemester");
+    const unpaidDeptSel = panelEl.querySelector("#unpaidDept");
+    const unpaidCourseSel = panelEl.querySelector("#unpaidCourse");
+    const unpaidClassInput = panelEl.querySelector("#unpaidClassText");
+    const unpaidTargetSel = panelEl.querySelector("#unpaidTargetType");
+    const unpaidBtnSearch = panelEl.querySelector("#unpaidBtnSearch");
+    const unpaidBtnReset = panelEl.querySelector("#unpaidBtnReset");
+    const unpaidBtnExport = panelEl.querySelector("#unpaidBtnExport");
+    const unpaidBody = panelEl.querySelector("#unpaid-body");
+    const unpaidPag = panelEl.querySelector("#unpaid-pagination");
+    const unpaidLoading = panelEl.querySelector("#unpaid-loading");
+
+    // Load danh sách khoản thu
+    async function loadUnpaidIncomeItems() {
+      try {
+        const res = await tryJson(`${BASE_API}?action=get_income_items`);
+        if (res && res.ok && res.items) {
+          unpaidItemSel.innerHTML = '<option value="">-- Chọn khoản thu --</option>' + 
+            res.items.map(item => `<option value="${esc(item.name)}" data-target="${esc(item.target_type)}">${esc(item.name)}</option>`).join("");
+        }
+      } catch (e) {
+        console.error("Lỗi loadUnpaidIncomeItems:", e);
+      }
+    }
+
+    // Tải dữ liệu thành viên chưa đóng
+    async function runUnpaidReport() {
+      const itemName = unpaidItemSel.value;
+      if (!itemName) {
+        alert("Vui lòng chọn khoản thu");
+        return;
+      }
+
+      unpaidState.itemName = itemName;
+      unpaidState.schoolYearId = unpaidSchoolYearSel.value;
+      unpaidState.semester = unpaidSemesterSel.value;
+      unpaidState.deptId = unpaidDeptSel.value;
+      unpaidState.courseId = unpaidCourseSel.value;
+      unpaidState.classText = unpaidClassInput.value.trim();
+      unpaidState.targetType = unpaidTargetSel.value;
+
+      if (unpaidLoading) unpaidLoading.classList.remove("hidden");
+
+      const params = {
+        action: "unpaid_members",
+        item_name: unpaidState.itemName,
+        school_year_id: unpaidState.schoolYearId,
+        semester: unpaidState.semester,
+        department_id: unpaidState.deptId,
+        course_id: unpaidState.courseId,
+        class_text: unpaidState.classText,
+        target_type: unpaidState.targetType,
+        page: unpaidState.page,
+        page_size: unpaidState.pageSize
+      };
+
+      const url = `${BASE_API}?${qs(params)}`;
+      const res = await tryJson(url);
+
+      if (unpaidLoading) unpaidLoading.classList.add("hidden");
+
+      if (!res || !res.ok) {
+        unpaidBody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-red-500">${esc(res?.error || "Không thể tải dữ liệu")}</td></tr>`;
+        unpaidPag.innerHTML = "";
+        unpaidBtnExport.disabled = true;
+        return;
+      }
+
+      unpaidState.rows = res.rows || [];
+      const paging = res.paging || {};
+      unpaidState.total = paging.total || 0;
+      unpaidState.totalPages = paging.total_pages || 1;
+
+      renderUnpaidTable();
+      createIcons();
+    }
+
+    function renderUnpaidTable() {
+      unpaidBtnExport.disabled = unpaidState.rows.length === 0;
+
+      if (unpaidState.rows.length === 0) {
+        unpaidBody.innerHTML = `<tr><td colspan="6" class="px-4 py-10 text-center text-emerald-600 font-semibold italic">Tất cả thành viên đã hoàn thành đóng tiền!</td></tr>`;
+        unpaidPag.innerHTML = "";
+        return;
+      }
+
+      const startIdx = (unpaidState.page - 1) * unpaidState.pageSize;
+
+      unpaidBody.innerHTML = unpaidState.rows.map((r, i) => {
+        const typeTone = r.member_type === "Đoàn viên" ? "green" : (r.member_type === "Thanh niên" ? "sky" : "gray");
+        return `
+          <tr class="border-t hover:bg-gray-50 transition">
+            <td class="px-4 py-3 text-center text-gray-500">${startIdx + i + 1}</td>
+            <td class="px-4 py-3 font-semibold text-gray-900">${esc(r.fullname)}</td>
+            <td class="px-4 py-3 text-center font-mono text-gray-600">${esc(r.mssv || "-")}</td>
+            <td class="px-4 py-3 text-gray-700 font-medium">${esc(r.class_name)}</td>
+            <td class="px-4 py-3 text-gray-600">${esc(r.department_name || "-")}</td>
+            <td class="px-4 py-3 text-center">${pill({ text: r.member_type, tone: typeTone })}</td>
+          </tr>
+        `;
+      }).join("");
+
+      // Render pagination
+      if (unpaidState.totalPages > 1) {
+        unpaidPag.innerHTML = `
+          <div class="flex items-center justify-center gap-2 text-sm pt-4 border-t border-gray-100">
+            <button class="px-2 py-1 border rounded hover:bg-gray-100" id="unpaidPrevBtn">‹</button>
+            <span class="text-gray-600">Trang ${unpaidState.page} / ${unpaidState.totalPages}</span>
+            <button class="px-2 py-1 border rounded hover:bg-gray-100" id="unpaidNextBtn">›</button>
+          </div>
+        `;
+        
+        const prevBtn = unpaidPag.querySelector("#unpaidPrevBtn");
+        const nextBtn = unpaidPag.querySelector("#unpaidNextBtn");
+
+        if (unpaidState.page === 1) prevBtn.disabled = true;
+        if (unpaidState.page === unpaidState.totalPages) nextBtn.disabled = true;
+
+        prevBtn.onclick = () => {
+          if (unpaidState.page > 1) {
+            unpaidState.page--;
+            runUnpaidReport();
+          }
+        };
+
+        nextBtn.onclick = () => {
+          if (unpaidState.page < unpaidState.totalPages) {
+            unpaidState.page++;
+            runUnpaidReport();
+          }
+        };
+      } else {
+        unpaidPag.innerHTML = "";
+      }
+    }
+
+    // Auto set Target Type khi thay đổi Khoản thu
+    unpaidItemSel.addEventListener("change", () => {
+      const opt = unpaidItemSel.options[unpaidItemSel.selectedIndex];
+      const target = opt ? opt.dataset.target : "";
+      if (target === "doan_vien" || target === "thanh_nien") {
+        unpaidTargetSel.value = target;
+      } else {
+        unpaidTargetSel.value = "tat_ca";
+      }
+    });
+
+    unpaidBtnSearch.onclick = () => {
+      unpaidState.page = 1;
+      runUnpaidReport();
+    };
+
+    unpaidBtnReset.onclick = () => {
+      unpaidItemSel.value = "";
+      unpaidSchoolYearSel.value = "";
+      unpaidSemesterSel.value = "";
+      unpaidDeptSel.value = "";
+      unpaidCourseSel.value = "";
+      unpaidClassInput.value = "";
+      unpaidTargetSel.value = "tat_ca";
+
+      unpaidState.page = 1;
+      unpaidState.rows = [];
+      unpaidState.total = 0;
+      unpaidState.totalPages = 1;
+      unpaidState.itemName = "";
+      unpaidState.schoolYearId = "";
+      unpaidState.semester = "";
+      unpaidState.deptId = "";
+      unpaidState.courseId = "";
+      unpaidState.classText = "";
+
+      unpaidBody.innerHTML = `<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500 italic">Vui lòng chọn khoản thu và bấm Tìm kiếm.</td></tr>`;
+      unpaidPag.innerHTML = "";
+      unpaidBtnExport.disabled = true;
+    };
+
+    unpaidBtnExport.onclick = () => {
+      if (!unpaidState.itemName) return;
+      const params = {
+        action: "export_unpaid_members",
+        item_name: unpaidState.itemName,
+        school_year_id: unpaidState.schoolYearId,
+        semester: unpaidState.semester,
+        department_id: unpaidState.deptId,
+        course_id: unpaidState.courseId,
+        class_text: unpaidState.classText,
+        target_type: unpaidState.targetType
+      };
+      window.location.href = `${BASE_API}?${qs(params)}`;
+    };
+
+    // Load data
+    await loadUnpaidIncomeItems();
 
     await runReport(panelEl);
     createIcons();

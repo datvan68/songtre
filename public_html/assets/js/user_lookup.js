@@ -32,8 +32,8 @@
     { key: "finance", label: "Thu–Chi" },
     { key: "inventory", label: "Thiết bị" },
     { key: "nominations", label: "Khen thưởng" },
-    { key: "achievements", label: "Thành tích" }, // ✅ thêm
-
+    { key: "achievements", label: "Thành tích" },
+    { key: "violations", label: "Kỷ luật - Vi phạm" },
   ];
 
   let ACTIVE_TAB = "personal";
@@ -791,43 +791,130 @@ ${isBCH
   }
 
   function renderFinance(data) {
-    const rows = data.finance || [];
-    if (!rows.length)
-      return `<div class="text-gray-500">User này chưa tạo phiếu Thu–Chi nào.</div>`;
+    const paid = data.finance_user_paid || [];
+    const unpaid = data.finance_user_unpaid || [];
 
+    let paidHtml = "";
+    if (!paid.length) {
+      paidHtml = `<div class="text-gray-500 py-2">Chưa có khoản phí nào đã đóng.</div>`;
+    } else {
+      paidHtml = `
+        <div class="overflow-auto rounded-2xl border border-gray-100 mb-6">
+          <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+              <tr>
+                <th class="text-left px-4 py-3">Khoản thu</th>
+                <th class="text-right px-4 py-3">Số tiền</th>
+                <th class="text-left px-4 py-3">Ngày đóng</th>
+                <th class="text-left px-4 py-3">Hình thức</th>
+                <th class="text-left px-4 py-3">Phạm vi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 bg-white">
+              ${paid.map((r) => {
+                const scopeBadge = r.scope === "Cả lớp" ? badge("Cả lớp", "blue") : badge("Cá nhân", "gray");
+                return `
+                  <tr>
+                    <td class="px-4 py-3 font-medium text-gray-900">${esc(r.item_name || "-")}</td>
+                    <td class="px-4 py-3 text-right font-semibold text-green-600">${fmtMoney(r.amount)}</td>
+                    <td class="px-4 py-3 text-xs text-gray-500">${esc(fmtDate(r.trans_date))}</td>
+                    <td class="px-4 py-3">${esc(viText(VI.finance_method_text, r.method, r.method || "-"))}</td>
+                    <td class="px-4 py-3">${scopeBadge}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    let unpaidHtml = "";
+    if (!unpaid.length) {
+      unpaidHtml = `<div class="text-gray-500 py-2">Không có khoản phí chưa đóng nào.</div>`;
+    } else {
+      unpaidHtml = `
+        <div class="overflow-auto rounded-2xl border border-gray-100">
+          <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+              <tr>
+                <th class="text-left px-4 py-3">Khoản thu</th>
+                <th class="text-left px-4 py-3">Đối tượng nộp</th>
+                <th class="text-left px-4 py-3">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 bg-white">
+              ${unpaid.map((r) => {
+                let targetText = "Tất cả";
+                if (r.target_type === "doan_vien") targetText = "Đoàn viên";
+                else if (r.target_type === "thanh_nien") targetText = "Thanh niên";
+                
+                return `
+                  <tr>
+                    <td class="px-4 py-3 font-medium text-gray-900">${esc(r.item_name || "-")}</td>
+                    <td class="px-4 py-3 text-gray-700">${esc(targetText)}</td>
+                    <td class="px-4 py-3">${badge("Chưa đóng", "red")}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="space-y-6">
+        <div>
+          <div class="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+            Các khoản đã đóng
+          </div>
+          ${paidHtml}
+        </div>
+        <div>
+          <div class="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+            Các khoản chưa đóng
+          </div>
+          ${unpaidHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderViolations(data) {
+    if (data.violations_forbidden) {
+      return `<div class="text-gray-500">Không có quyền xem Kỷ luật - Vi phạm.</div>`;
+    }
+    const rows = data.violations || [];
+    if (!rows.length) {
+      return `<div class="text-gray-500">Không có lịch sử vi phạm.</div>`;
+    }
     return `
       <div class="overflow-auto rounded-2xl border border-gray-100">
         <table class="min-w-full text-sm">
           <thead class="bg-gray-50 text-gray-600">
             <tr>
-              <th class="text-left px-4 py-3">Loại</th>
-              <th class="text-left px-4 py-3">Khoản</th>
-              <th class="text-right px-4 py-3">Số tiền</th>
-              <th class="text-left px-4 py-3">Ngày</th>
-              <th class="text-left px-4 py-3">PTTT</th>
-              <th class="text-left px-4 py-3">Trạng thái</th>
+              <th class="text-left px-4 py-3 w-12">STT</th>
+              <th class="text-left px-4 py-3">Lý do vi phạm</th>
+              <th class="text-left px-4 py-3">Hình thức xử lý</th>
+              <th class="text-left px-4 py-3">Ngày ghi nhận</th>
+              <th class="text-left px-4 py-3">Người lập</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 bg-white">
-            ${rows
-        .map((r) => {
-          const typeKey = keyLower(r.type);
-          const typeBadge = VI.finance_type[typeKey]
-            ? viBadgeFromMap(VI.finance_type, typeKey)
-            : badge(typeKey || "-", "gray");
-          return `
+            ${rows.map((r, idx) => {
+              return `
                 <tr>
-                    <td class="px-4 py-3">${typeBadge}</td>
-                  <td class="px-4 py-3 font-medium text-gray-900">${esc(r.item_name || "-")}</td>
-                  <td class="px-4 py-3 text-right font-semibold">${fmtMoney(r.amount)}</td>
-<td class="px-4 py-3 text-xs text-gray-500">${esc(fmtDate(r.trans_date))}</td>
-                    <td class="px-4 py-3">${esc(viText(VI.finance_method_text, r.method, r.method || "-"))}</td>
-                    <td class="px-4 py-3">${esc(viText(VI.finance_status_text, r.status, r.status || "-"))}</td>
-
+                  <td class="px-4 py-3 font-medium text-gray-500">${idx + 1}</td>
+                  <td class="px-4 py-3 font-medium text-gray-900">${esc(r.reason || "-")}</td>
+                  <td class="px-4 py-3">${esc(r.treatment || "-")}</td>
+                  <td class="px-4 py-3 text-xs text-gray-500">${esc(fmtDate(r.created_at))}</td>
+                  <td class="px-4 py-3 text-gray-700">${esc(r.creator_name || "-")}</td>
                 </tr>
               `;
-        })
-        .join("")}
+            }).join("")}
           </tbody>
         </table>
       </div>
@@ -1026,6 +1113,8 @@ ${isBCH
       $detail.innerHTML = renderNominations(d);
     else if (ACTIVE_TAB === "achievements")
       $detail.innerHTML = renderAchievements(d);
+    else if (ACTIVE_TAB === "violations")
+      $detail.innerHTML = renderViolations(d);
 
     else
       $detail.innerHTML = `<div class="text-gray-500">Tab không hợp lệ.</div>`;

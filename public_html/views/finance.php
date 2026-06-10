@@ -91,7 +91,11 @@ $FIN_CAN = [
                     <option value="">Tất cả khoa</option>
                 </select>
 
-                <div class="relative md:col-span-2">
+                <select id="filterCourse" class="border rounded-xl px-3 py-2 text-sm">
+                    <option value="">Tất cả khóa</option>
+                </select>
+
+                <div class="relative">
                     <input id="filterClass" class="border rounded-xl px-3 py-2 text-sm w-full"
                         placeholder="Lớp (gợi ý theo khoa)" autocomplete="off" />
 
@@ -112,15 +116,15 @@ $FIN_CAN = [
                     class="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm font-semibold">
                     Refresh
                 </button>
-                <!-- <button id="btnExportUnpaidSummary"
-                    class="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-sm flex items-center gap-1.5 transition-colors">
+                <button id="btnExportExcel"
+                    class="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-sm flex items-center gap-1.5 transition-colors hidden">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 3v12" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M8 11l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/>
                         <path d="M5 21h14" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                    Xuất Excel lớp chưa đóng
-                </button> -->
+                    Xuất Excel
+                </button>
             </div>
 
             <!-- Table + Mobile Cards -->
@@ -135,21 +139,25 @@ $FIN_CAN = [
                 <div class="hidden md:block overflow-auto">
                     <table class="min-w-[2000px] w-full text-sm table-fixed">
                         <colgroup>
-                            <col class="w-[60px]" /> <!-- Thu/Chi -->
-                            <col class="w-[90px]" /> <!-- Ngày -->
-                            <col class="w-[130px]" /> <!-- HK • Năm học -->
-                            <col class="w-[160px]" /> <!-- Nội dung -->
+                            <col class="w-[45px]" /> <!-- Checkbox -->
+                            <col class="w-[70px]" /> <!-- Thu/Chi -->
+                            <col class="w-[100px]" /> <!-- Ngày -->
+                            <col class="w-[140px]" /> <!-- HK • Năm học -->
+                            <col class="w-[180px]" /> <!-- Nội dung -->
                             <col class="w-[140px]" /> <!-- Số tiền -->
                             <col class="w-[160px]" /> <!-- Khoa -->
                             <col class="w-[140px]" /> <!-- Lớp -->
                             <col class="w-[180px]" /> <!-- Người nộp/chi -->
                             <col class="w-[180px]" /> <!-- Người nhận -->
                             <col class="w-[220px]" /> <!-- Ghi chú -->
-                            <col class="w-[140px]" /> <!-- Thao tác -->
+                            <col class="w-[160px]" /> <!-- Thao tác -->
                         </colgroup>
 
                         <thead class="bg-gray-50">
                             <tr class="text-left text-xs font-semibold text-gray-600 uppercase">
+                                <th class="px-4 py-3 text-center whitespace-nowrap">
+                                    <input type="checkbox" id="chkFinanceSelectAll" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4" />
+                                </th>
                                 <th class="px-4 py-3 text-center whitespace-nowrap">Thu/Chi</th>
                                 <th class="px-4 py-3 whitespace-nowrap">Ngày</th>
                                 <th class="px-4 py-3">HK • Năm học</th>

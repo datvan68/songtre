@@ -104,34 +104,62 @@ try {
 
   // Grant full rights to admin roles
   $pdo->prepare("
-    INSERT IGNORE INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+    INSERT INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
     SELECT id, ?, 1, 1, 1, 1, 1, 1
     FROM roles
     WHERE name LIKE '%admin%' OR id IN (1, 2)
+    ON DUPLICATE KEY UPDATE
+      can_view = VALUES(can_view),
+      can_create = VALUES(can_create),
+      can_update = VALUES(can_update),
+      can_review = VALUES(can_review),
+      can_delete = VALUES(can_delete),
+      can_print = VALUES(can_print)
   ")->execute([$permId]);
 
   $pdo->prepare("
-    INSERT IGNORE INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+    INSERT INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
     SELECT u.id, ?, 1, 1, 1, 1, 1, 1
     FROM users u
     JOIN roles r ON r.id = u.role_id
     WHERE r.name LIKE '%admin%' OR r.id IN (1, 2)
+    ON DUPLICATE KEY UPDATE
+      can_view = VALUES(can_view),
+      can_create = VALUES(can_create),
+      can_update = VALUES(can_update),
+      can_review = VALUES(can_review),
+      can_delete = VALUES(can_delete),
+      can_print = VALUES(can_print)
   ")->execute([$permId]);
 
   // Grant view + create to ALL other roles so regular users can see "Phong trào đang diễn ra" list and submit reports
   $pdo->prepare("
-    INSERT IGNORE INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+    INSERT INTO role_permissions (role_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
     SELECT id, ?, 1, 1, 0, 0, 0, 0
     FROM roles
     WHERE name NOT LIKE '%admin%'
+    ON DUPLICATE KEY UPDATE
+      can_view = VALUES(can_view),
+      can_create = VALUES(can_create),
+      can_update = VALUES(can_update),
+      can_review = VALUES(can_review),
+      can_delete = VALUES(can_delete),
+      can_print = VALUES(can_print)
   ")->execute([$permId]);
 
   $pdo->prepare("
-    INSERT IGNORE INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
+    INSERT INTO user_permissions (user_id, permission_id, can_view, can_create, can_update, can_review, can_delete, can_print)
     SELECT u.id, ?, 1, 1, 0, 0, 0, 0
     FROM users u
     JOIN roles r ON r.id = u.role_id
     WHERE r.name NOT LIKE '%admin%'
+    ON DUPLICATE KEY UPDATE
+      can_view = VALUES(can_view),
+      can_create = VALUES(can_create),
+      can_update = VALUES(can_update),
+      can_review = VALUES(can_review),
+      can_delete = VALUES(can_delete),
+      can_print = VALUES(can_print)
   ")->execute([$permId]);
 } catch (Throwable $pErr) {
   // ignore
@@ -464,7 +492,7 @@ if ($action === 'submit') {
 }
 
 if ($action === 'list_my') {
-  if (!can('baocaophongtrao', 'view')) forbidden();
+  if (!can('baocaophongtrao', 'view') && !can('baocaophongtrao', 'create')) forbidden();
   $stmt = $pdo->prepare("
     SELECT r.*, c.title as movement_name 
     FROM phong_trao_reports r 

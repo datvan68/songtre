@@ -1456,6 +1456,7 @@ try {
 
             $type = $input['type'] ?? 'all'; // all|income|expense
             $deptId = trim((string) ($input['department_id'] ?? ''));
+            $courseId = trim((string) ($input['course_id'] ?? ''));
             $classText = trim((string) ($input['class_text'] ?? ''));
             $q = trim((string) ($input['q'] ?? ''));
 
@@ -1477,6 +1478,11 @@ try {
             if ($deptId !== '') {
                 $where .= " AND t.department_id = ? ";
                 $params[] = (int) $deptId;
+            }
+
+            if ($courseId !== '') {
+                $where .= " AND t.course_id = ? ";
+                $params[] = (int) $courseId;
             }
 
             if ($classText !== '') {
@@ -2179,6 +2185,164 @@ try {
             break;
         }
 
+        case 'export_transactions': {
+            require_can('finance', 'view');
+
+            $idsRaw = trim((string) ($_GET['ids'] ?? ''));
+            $where = " WHERE 1=1 ";
+            $params = [];
+
+            if ($idsRaw !== '') {
+                $ids = array_filter(array_map('intval', explode(',', $idsRaw)));
+                if (!empty($ids)) {
+                    $in = implode(',', array_fill(0, count($ids), '?'));
+                    $where .= " AND t.id IN ($in) ";
+                    $params = array_values($ids);
+                }
+            } else {
+                // Lọc theo filter
+                $type = $_GET['type'] ?? 'all';
+                $deptId = trim((string) ($_GET['department_id'] ?? ''));
+                $courseId = trim((string) ($_GET['course_id'] ?? ''));
+                $classText = trim((string) ($_GET['class_text'] ?? ''));
+                $from = trim((string) ($_GET['from'] ?? ''));
+                $to = trim((string) ($_GET['to'] ?? ''));
+                $q = trim((string) ($_GET['q'] ?? ''));
+
+                if (in_array($type, ['income', 'expense'])) {
+                    $where .= " AND t.type = ? ";
+                    $params[] = $type;
+                }
+                if ($deptId !== '') {
+                    $where .= " AND t.department_id = ? ";
+                    $params[] = (int) $deptId;
+                }
+                if ($courseId !== '') {
+                    $where .= " AND t.course_id = ? ";
+                    $params[] = (int) $courseId;
+                }
+                if ($classText !== '') {
+                    $where .= " AND t.class_text LIKE ? ";
+                    $params[] = '%' . $classText . '%';
+                }
+                if ($from !== '') {
+                    $where .= " AND t.trans_date >= ? ";
+                    $params[] = $from;
+                }
+                if ($to !== '') {
+                    $where .= " AND t.trans_date <= ? ";
+                    $params[] = $to;
+                }
+                if ($q !== '') {
+                    $where .= " AND (
+                        t.item_name LIKE ?
+                        OR t.payer_name LIKE ?
+                        OR t.receiver_name LIKE ?
+                        OR t.payee_name LIKE ?
+                        OR t.note LIKE ?
+                        OR t.description LIKE ?
+                        OR t.code LIKE ?
+                    ) ";
+                    $like = '%' . $q . '%';
+                    array_push($params, $like, $like, $like, $like, $like, $like, $like);
+                }
+            }
+
+            // Lấy dữ liệu
+            $sql = "
+                SELECT
+                    t.id,
+                    t.code,
+                    t.type,
+                    t.item_name,
+                    t.amount,
+                    t.trans_date,
+                    sy.year_label AS school_year_label,
+                    sem.label AS semester_label,
+                    d.name AS department_name,
+                    t.class_text,
+                    t.payer_name,
+                    t.receiver_name,
+                    t.payee_name,
+                    t.description,
+                    t.note
+                FROM finance_transactions t
+                LEFT JOIN departments d ON d.id = t.department_id
+                LEFT JOIN school_years sy ON sy.id = t.school_year_id
+                LEFT JOIN semesters sem ON sem.code = t.semester
+                $where
+                ORDER BY t.trans_date DESC, t.id DESC
+            ";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Tạo cấu trúc dữ liệu cho Excel
+            $data = [
+                [
+                    '<b>STT</b>',
+                    '<b>Số phiếu</b>',
+                    '<b>Loại</b>',
+                    '<b>Học kỳ • Năm học</b>',
+                    '<b>Nội dung</b>',
+                    '<b>Số tiền (đ)</b>',
+                    '<b>Đơn vị / Người được chi</b>',
+                    '<b>Lớp / Chức vụ</b>',
+                    '<b>Người nộp / Người duyệt</b>',
+                    '<b>Người nhận / Chức vụ duyệt</b>',
+                    '<b>Mô tả</b>',
+                    '<b>Ghi chú</b>',
+                    '<b>Ngày giao dịch</b>'
+                ]
+            ];
+
+            foreach ($rows as $i => $r) {
+                $isIncome = ($r['type'] === 'income');
+                $typeText = $isIncome ? 'Thu' : 'Chi';
+                
+                $hkText = ($r['semester_label'] || $r['school_year_label']) 
+                    ? ($r['semester_label'] . ' • ' . $r['school_year_label'])
+                    : '--';
+                
+                if ($isIncome) {
+                    $deptText = $r['department_name'] ?: '--';
+                    $clsText = $r['class_text'] ?: '--';
+                    $payerText = $r['payer_name'] ?: '--';
+                    $receiverText = $r['receiver_name'] ?: '--';
+                } else {
+                    $deptText = $r['payee_name'] ?: '--';
+                    $clsText = $r['class_text'] ?: '--';
+                    $payerText = $r['payer_name'] ?: '--';
+                    $receiverText = $r['receiver_name'] ?: '--';
+                }
+
+                $data[] = [
+                    $i + 1,
+                    $r['code'] ?: '--',
+                    $typeText,
+                    $hkText,
+                    $r['item_name'] ?: '--',
+                    (float) $r['amount'],
+                    $deptText,
+                    $clsText,
+                    $payerText,
+                    $receiverText,
+                    $r['description'] ?: '--',
+                    $r['note'] ?: '--',
+                    $r['trans_date'] ? date('d/m/Y', strtotime($r['trans_date'])) : '--'
+                ];
+            }
+
+            clean_output_buffers();
+
+            $filename = "Danh_Sach_Thu_Chi_" . date('Ymd_His') . ".xlsx";
+
+            $xlsx = SimpleXLSXGen::fromArray($data);
+            $xlsx->downloadAs($filename);
+            exit;
+        }
+
         case 'export_unpaid_classes': {
             require_can('finance', 'view');
 
@@ -2452,12 +2616,24 @@ try {
                 $params[] = $courseId;
             }
 
+            $targetType = trim((string) ($input['target_type'] ?? 'tat_ca'));
+            if ($targetType === 'doan_vien') {
+                $where[] = "LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $where[] = "LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
             $sql = "
         SELECT
           m.id,
           m.fullname AS name,
           m.mssv,
-          COALESCE(c.name, '') AS class_text
+          COALESCE(c.name, '') AS class_text,
+          CASE 
+            WHEN LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan') THEN 'Đoàn viên'
+            WHEN LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh') THEN 'Thanh niên'
+            ELSE 'Khác'
+          END AS member_type
         FROM members m
         JOIN classes c ON c.id = m.class_id
         WHERE " . implode(" AND ", $where) . "

@@ -21,6 +21,7 @@
 
     filterType: $("filterType"),
     filterDept: $("filterDept"),
+    filterCourse: $("filterCourse"),
     filterClass: $("filterClass"),
     filterFrom: $("filterFrom"),
     filterTo: $("filterTo"),
@@ -34,7 +35,8 @@
     btnNext: $("btnNext"),
 
     btnVoucherSettings: $("btnVoucherSettings"),
-    btnExportUnpaidSummary: $("btnExportUnpaidSummary"),
+    btnExportExcel: $("btnExportExcel"),
+    chkSelectAll: $("chkFinanceSelectAll"),
 
   };
 
@@ -65,6 +67,7 @@
     page_size: 10,
     type: "all",
     department_id: "",
+    course_id: "",
     class_text: "",
     from: "",
     to: "",
@@ -664,7 +667,10 @@
         : "--";
 
     return `
-      <tr class="hover:bg-gray-50">
+      <tr class="hover:bg-gray-50" data-id="${r.id}">
+        <td class="px-4 py-3 whitespace-nowrap text-center">
+          <input type="checkbox" class="chk-finance-item rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4" data-id="${r.id}" />
+        </td>
         <td class="px-4 py-3 whitespace-nowrap text-center">
           ${badgeType(r.type)}
         </td>
@@ -873,7 +879,11 @@
       els.filterDept.innerHTML = renderDeptOptionsGrouped(META.departments || [], "filter");
     }
 
-    // (Tuỳ bạn có filter semester/year ngoài trang hay không)
+    if (els.filterCourse) {
+      els.filterCourse.innerHTML = `<option value="">Tất cả khóa</option>` + (META.courses || [])
+        .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+        .join("");
+    }
     // Nếu có element filterSemester/filterSchoolYear thì set ở đây.
   }
 
@@ -884,6 +894,7 @@
       page_size: STATE.page_size,
       type: STATE.type,
       department_id: STATE.department_id,
+      course_id: STATE.course_id,
       class_text: STATE.class_text,
       from: STATE.from,
       to: STATE.to,
@@ -892,6 +903,12 @@
 
     const rows = data.rows || [];
     FINANCE_CACHE = rows;
+    if (els.chkSelectAll) {
+      els.chkSelectAll.checked = false;
+    }
+    if (els.btnExportExcel) {
+      els.btnExportExcel.classList.add("hidden");
+    }
     els.tbody.innerHTML = rows.map(renderRow).join("");
 
     if (els.mobileList) {
@@ -918,6 +935,7 @@
     const apply = () => {
       STATE.type = els.filterType.value;
       STATE.department_id = els.filterDept.value;
+      STATE.course_id = els.filterCourse ? els.filterCourse.value : "";
       STATE.class_text = els.filterClass.value.trim();
       STATE.from = els.filterFrom.value;
       STATE.to = els.filterTo.value;
@@ -934,6 +952,7 @@
 
     els.filterType.onchange = apply;
     els.filterDept.onchange = debounce;
+    if (els.filterCourse) els.filterCourse.onchange = debounce;
     els.filterClass.oninput = debounce;
     els.filterFrom.onchange = debounce;
     els.filterTo.onchange = debounce;
@@ -941,12 +960,26 @@
 
     els.btnRefresh.onclick = () => loadList().catch((e) => toast(e.message));
 
-    if (els.btnExportUnpaidSummary) {
-      els.btnExportUnpaidSummary.onclick = () => {
-        const params = new URLSearchParams({
-          action: "export_unpaid_classes_summary",
-          department_id: els.filterDept ? els.filterDept.value : ""
-        });
+    if (els.btnExportExcel) {
+      els.btnExportExcel.onclick = () => {
+        const checkboxes = Array.from(els.tbody.querySelectorAll(".chk-finance-item:checked"));
+        const ids = checkboxes.map(chk => chk.dataset.id);
+        
+        const params = new URLSearchParams();
+        params.set("action", "export_transactions");
+        
+        if (ids.length > 0) {
+          params.set("ids", ids.join(","));
+        } else {
+          params.set("type", STATE.type);
+          params.set("department_id", STATE.department_id);
+          params.set("course_id", STATE.course_id);
+          params.set("class_text", STATE.class_text);
+          params.set("from", STATE.from);
+          params.set("to", STATE.to);
+          params.set("q", STATE.q);
+        }
+        
         window.open(API + "?" + params.toString(), "_blank");
       };
     }
@@ -1088,6 +1121,7 @@
   function setupFilterClassAutocomplete() {
     const input = els.filterClass;
     const deptSel = els.filterDept;
+    const courseSel = els.filterCourse;
     const box = document.getElementById("filterClassSug");
     if (!input || !deptSel || !box) return;
 
@@ -1146,6 +1180,7 @@
 
     const reload = async (clearInput = true) => {
       const deptId = deptSel.value;
+      const courseId = courseSel ? courseSel.value : "";
 
       if (!deptId) {
         LIST = [];
@@ -1155,8 +1190,8 @@
       }
 
       try {
-        // ✅ lấy lớp theo khoa (không cần khóa)
-        const names = await fetchClassesByDeptCourse(deptId, "");
+        // ✅ lấy lớp theo khoa + khóa
+        const names = await fetchClassesByDeptCourse(deptId, courseId);
         LIST = names.map((name) => ({ name, norm: normText(name) }));
 
         if (clearInput) {
@@ -1173,8 +1208,11 @@
       }
     };
 
-    // ✅ đổi khoa => reload list lớp theo khoa, clear lớp filter luôn
+    // ✅ đổi khoa/khóa => reload list lớp, clear lớp filter luôn
     deptSel.addEventListener("change", () => reload(true));
+    if (courseSel) {
+      courseSel.addEventListener("change", () => reload(true));
+    }
 
     // ✅ click vào input => xổ list (nếu chưa chọn khoa thì hiện hint)
     input.addEventListener("focus", () => {
@@ -1341,10 +1379,11 @@
     // Nếu là select box (khoản thu)
     if (input.tagName === "SELECT") {
       const reload = async () => {
-        const names = await fetchFinanceItems(type);
+        const data = await api("items_list", { type });
+        const rows = data?.rows || [];
         const currentVal = input.dataset.initVal || input.value;
         input.innerHTML = `<option value="">-- Chọn khoản thu --</option>` +
-          names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+          rows.map(r => `<option value="${escapeHtml(r.name)}" data-target-type="${escapeHtml(r.target_type || 'tat_ca')}">${escapeHtml(r.name)}</option>`).join("");
         if (currentVal) {
           input.value = currentVal;
         }
@@ -2193,7 +2232,8 @@
               <tr>
                 <th class="px-3 py-2 w-[50px] text-center">Chọn</th>
                 <th class="px-3 py-2 text-left">Thành viên</th>
-                <th class="px-3 py-2 text-left w-[160px]">MSSV</th>
+                <th class="px-3 py-2 text-left w-[140px]">MSSV</th>
+                <th class="px-3 py-2 text-left w-[140px]">Đối tượng</th>
               </tr>
             </thead>
             <tbody id="partTbody"></tbody>
@@ -2218,16 +2258,24 @@
     const qEl = mroot.querySelector("#partQ");
     const cEl = mroot.querySelector("#partCount");
 
+    const fItem = root.querySelector("#fItem");
+    let targetType = "tat_ca";
+    if (fItem && fItem.tagName === "SELECT" && fItem.selectedIndex >= 0) {
+      targetType = fItem.options[fItem.selectedIndex].dataset.targetType || "tat_ca";
+    }
+
     const data = await api("members_by_class", {
       department_id: deptId,
       course_id: courseId,
       class_text: classText,
+      target_type: targetType,
     });
 
     const ALL = (data.rows || []).map(x => ({
       id: Number(x.id || 0),
       name: String(x.name || ""),
       mssv: String(x.mssv || ""),
+      member_type: String(x.member_type || "Khác"),
       norm: normText((x.name || "") + " " + (x.mssv || "")),
     })).filter(x => x.id > 0);
 
@@ -2241,6 +2289,7 @@
               </td>
               <td class="px-3 py-2 font-medium text-gray-900">${escapeHtml(m.name)}</td>
               <td class="px-3 py-2">${escapeHtml(m.mssv)}</td>
+              <td class="px-3 py-2">${escapeHtml(m.member_type)}</td>
             </tr>
           `;
       }).join("");
@@ -3202,12 +3251,45 @@
     await loadData();
   }
 
+  function updateExportButtonVisibility() {
+    if (!els.btnExportExcel) return;
+    const checkedCount = els.tbody.querySelectorAll(".chk-finance-item:checked").length;
+    if (checkedCount > 0) {
+      els.btnExportExcel.classList.remove("hidden");
+    } else {
+      els.btnExportExcel.classList.add("hidden");
+    }
+  }
+
+  function bindCheckboxes() {
+    if (!els.chkSelectAll) return;
+    
+    els.chkSelectAll.addEventListener("change", function () {
+      const isChecked = this.checked;
+      const checkboxes = els.tbody.querySelectorAll(".chk-finance-item");
+      checkboxes.forEach((chk) => {
+        chk.checked = isChecked;
+      });
+      updateExportButtonVisibility();
+    });
+
+    els.tbody.addEventListener("change", function (e) {
+      if (e.target && e.target.classList.contains("chk-finance-item")) {
+        const checkboxes = Array.from(els.tbody.querySelectorAll(".chk-finance-item"));
+        const allChecked = checkboxes.length > 0 && checkboxes.every((chk) => chk.checked);
+        els.chkSelectAll.checked = allChecked;
+        updateExportButtonVisibility();
+      }
+    });
+  }
+
   async function boot() {
     try {
       await loadMeta();
       bindVoucherSettingsButton();
       bindFilters();
       setupFilterClassAutocomplete(); // ✅ thêm dòng này
+      bindCheckboxes();
 
       bindPaging();
       bindCreateButtons();
