@@ -130,7 +130,7 @@ async function jumpPageAjax(type, page, total) {
         actions += `
 <button
   class="px-2 text-blue-600 hover:underline"
-  onclick='openCourseModal(${row.id}, ${JSON.stringify(row.name)})'>
+  onclick='openCourseModal(${row.id}, ${JSON.stringify(row.name)}, ${row.status})'>
   Sửa
 </button>
 `;
@@ -150,8 +150,17 @@ async function jumpPageAjax(type, page, total) {
         actions = `<span class="text-xs text-gray-400">Không có quyền</span>`;
       }
 
+      const statusLabel = row.status == 1 
+        ? `<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-semibold">Đang theo dõi</span>` 
+        : `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-semibold">Ngừng theo dõi</span>`;
+
       tr.innerHTML = `
-  <td class="py-1">${row.name}</td>
+  <td class="py-1">
+    <div class="flex items-center gap-2">
+      <span>${row.name}</span>
+      ${statusLabel}
+    </div>
+  </td>
   <td class="text-right whitespace-nowrap py-1">
     ${actions}
   </td>
@@ -170,7 +179,8 @@ async function jumpPageAjax(type, page, total) {
     data-id="${row.id}"
     data-name="${encodeURIComponent(row.name || "")}"
     data-dept="${row.department_id || 0}"
-    data-course="${row.course_id || 0}">
+    data-course="${row.course_id || 0}"
+    data-status="${row.status}">
     Sửa
   </button>
 `;
@@ -190,8 +200,17 @@ async function jumpPageAjax(type, page, total) {
         actions = `<span class="text-xs text-gray-400">Không có quyền</span>`;
       }
 
+      const statusLabel = row.status == 1 
+        ? `<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-semibold">Đang theo dõi</span>` 
+        : `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-semibold">Ngừng theo dõi</span>`;
+
       tr.innerHTML = `
-  <td class="py-1">${row.name}</td>
+  <td class="py-1">
+    <div class="flex items-center gap-2">
+      <span>${row.name}</span>
+      ${statusLabel}
+    </div>
+  </td>
   <td class="text-right whitespace-nowrap py-1">
     ${actions}
   </td>
@@ -209,8 +228,9 @@ async function jumpPageAjax(type, page, total) {
           const name = decodeURIComponent(btn.dataset.name || "");
           const dept = parseInt(btn.dataset.dept, 10) || 0;
           const course = parseInt(btn.dataset.course, 10) || 0;
+          const status = parseInt(btn.dataset.status, 10) === 0 ? 0 : 1;
 
-          openClassModal(id, name, dept, course);
+          openClassModal(id, name, dept, course, status);
         };
       });
     }
@@ -280,7 +300,7 @@ function openDeptModal(id = 0, name = "") {
 }
 
 
-function openCourseModal(id = 0, name = "") {
+function openCourseModal(id = 0, name = "", status = 1) {
   const wrap = document.createElement("div");
   wrap.innerHTML = `
     <form id="courseForm" class="grid gap-3">
@@ -289,6 +309,13 @@ function openCourseModal(id = 0, name = "") {
       <div>
         <label class="block text-sm mb-1">Tên Khóa học</label>
         <input name="name" value="${name}" required class="w-full px-3 py-2 border rounded-lg">
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Trạng thái</label>
+        <select name="status" class="w-full px-3 py-2 border rounded-lg">
+          <option value="1" ${status == 1 ? "selected" : ""}>Đang theo dõi</option>
+          <option value="0" ${status == 0 ? "selected" : ""}>Ngừng theo dõi</option>
+        </select>
       </div>
       <div class="flex justify-end gap-2 mt-3">
         <button type="button" class="px-4 py-2 border rounded-lg" onclick="closeModal()">Hủy</button>
@@ -327,7 +354,7 @@ function openCourseModal(id = 0, name = "") {
 
 }
 
-function openClassModal(id = 0, name = "", dept = 0, course = 0) {
+function openClassModal(id = 0, name = "", dept = 0, course = 0, status = 1) {
   const wrap = document.createElement("div");
   wrap.innerHTML = `
     <form id="classForm" class="grid gap-3">
@@ -363,6 +390,14 @@ function openClassModal(id = 0, name = "", dept = 0, course = 0) {
         `<option value="${c.id}" ${course == c.id ? "selected" : ""}>${c.name}</option>`
       )
       .join("")}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm mb-1">Trạng thái</label>
+        <select name="status" class="w-full px-3 py-2 border rounded-lg">
+          <option value="1" ${status == 1 ? "selected" : ""}>Đang theo dõi</option>
+          <option value="0" ${status == 0 ? "selected" : ""}>Ngừng theo dõi</option>
         </select>
       </div>
 

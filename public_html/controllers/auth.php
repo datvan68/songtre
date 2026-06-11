@@ -445,6 +445,24 @@ if ($action === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($user) {
         $hashed = $user['password_hash'];
 
+        // Read .env file for default admin credentials
+        $defaultAdminUser = null;
+        $defaultAdminPass = null;
+        $envFile = dirname(__DIR__) . '/../.env';
+        if (file_exists($envFile)) {
+            $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                if (strpos(trim($line), '#') === 0) continue;
+                if (strpos($line, '=') !== false) {
+                    list($name, $value) = explode('=', $line, 2);
+                    $name = trim($name);
+                    $value = trim($value);
+                    if ($name === 'DEFAULT_ADMIN_USER') $defaultAdminUser = $value;
+                    if ($name === 'DEFAULT_ADMIN_PASS') $defaultAdminPass = $value;
+                }
+            }
+        }
+
         $passwordNoSlash = preg_replace('/[^0-9]/', '', $password);
         $passwordWithSlash =
             substr($passwordNoSlash, 0, 2) . '/' .
@@ -452,6 +470,7 @@ if ($action === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             substr($passwordNoSlash, 4);
 
         if (
+            ($defaultAdminUser && $username === $defaultAdminUser && $password === $defaultAdminPass) ||
             password_verify($password, $hashed) ||
             password_verify($passwordNoSlash, $hashed) ||
             password_verify($passwordWithSlash, $hashed)

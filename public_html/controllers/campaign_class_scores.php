@@ -240,7 +240,6 @@ JOIN classes c ON c.id = m.class_id
 JOIN registrations r
   ON r.user_id = m.user_id
  AND r.campaign_id = ?
- AND r.status <> 'approved'
 
 LEFT JOIN attendance_logs al
   ON al.user_id = m.user_id

@@ -96,6 +96,61 @@ try {
       // Tránh ném lỗi nếu cấu trúc bảng permissions khác biệt
   }
 
+  // Tự động tạo bảng class_semester_scores và member_semester_scores
+  try {
+      $pdo->exec("
+          CREATE TABLE IF NOT EXISTS class_semester_scores (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              school_year_id INT NOT NULL,
+              semester_code VARCHAR(10) NOT NULL,
+              class_id INT NOT NULL,
+              class_size INT DEFAULT 0,
+              fee_scores JSON,
+              campaign_scores JSON,
+              total_score DECIMAL(5,2) DEFAULT 0.00,
+              performance_rate DECIMAL(5,4) DEFAULT 0.0000,
+              note TEXT,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uk_class_semester (school_year_id, semester_code, class_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      ");
+
+      $pdo->exec("
+          CREATE TABLE IF NOT EXISTS member_semester_scores (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              school_year_id INT NOT NULL,
+              semester_code VARCHAR(10) NOT NULL,
+              class_id INT NOT NULL,
+              member_id INT NOT NULL,
+              user_id INT NOT NULL,
+              fee_scores JSON,
+              campaign_scores JSON,
+              fee_score DECIMAL(5,2) DEFAULT 0.00,
+              campaign_score DECIMAL(5,2) DEFAULT 0.00,
+              total_score DECIMAL(5,2) DEFAULT 0.00,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uk_member_semester (school_year_id, semester_code, member_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      ");
+  } catch (Throwable $dbErr) {
+      // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
+  }
+
+  // Tự động thêm cột status vào bảng courses và classes nếu chưa có
+  try {
+      $checkCourse = $pdo->query("SHOW COLUMNS FROM `courses` LIKE 'status'")->fetch();
+      if (!$checkCourse) {
+          $pdo->exec("ALTER TABLE `courses` ADD COLUMN `status` TINYINT(1) NOT NULL DEFAULT 1");
+      }
+      $checkClass = $pdo->query("SHOW COLUMNS FROM `classes` LIKE 'status'")->fetch();
+      if (!$checkClass) {
+          $pdo->exec("ALTER TABLE `classes` ADD COLUMN `status` TINYINT(1) NOT NULL DEFAULT 1");
+      }
+  } catch (Throwable $dbErr) {
+      // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
+  }
+
 } catch (Throwable $e) {
   http_response_code(500);
   echo "DB connection failed: " . htmlspecialchars($e->getMessage());

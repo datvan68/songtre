@@ -84,12 +84,14 @@ LIMIT 1
   $courses = $pdo->query("
   SELECT id, name
   FROM courses
+  WHERE status = 1
   ORDER BY name
 ")->fetchAll(PDO::FETCH_ASSOC);
 
   $classes = $pdo->query("
   SELECT id, name, department_id, course_id
   FROM classes
+  WHERE status = 1
   ORDER BY name
 ")->fetchAll(PDO::FETCH_ASSOC);
   $chidoanGroups = $pdo->query("

@@ -132,11 +132,20 @@ $classes = $pdo->query("
                         <tbody id="tbodyCourse">
                             <?php foreach ($courses as $c): ?>
                                 <tr class="border-t">
-                                    <td class="py-1"><?= htmlspecialchars($c['name']) ?></td>
+                                    <td class="py-1">
+                                        <div class="flex items-center gap-2">
+                                            <span><?= htmlspecialchars($c['name']) ?></span>
+                                            <?php if (($c['status'] ?? 1) == 1): ?>
+                                                <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-semibold">Đang theo dõi</span>
+                                            <?php else: ?>
+                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-semibold">Ngừng theo dõi</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
                                     <td class="text-right whitespace-nowrap py-1">
                                         <?php if (can('departments', 'update')): ?>
                                             <button class="px-2 text-blue-600"
-                                                onclick='openCourseModal(<?= $c["id"] ?>, <?= json_encode($c["name"]) ?>)'>
+                                                onclick='openCourseModal(<?= $c["id"] ?>, <?= json_encode($c["name"]) ?>, <?= $c["status"] ?? 1 ?>)'>
                                                 Sửa
                                             </button>
                                         <?php endif; ?>
@@ -180,14 +189,24 @@ $classes = $pdo->query("
                         <tbody id="tbodyClass">
                             <?php foreach ($classes as $cl): ?>
                                 <tr class="border-t">
-                                    <td class="py-1"><?= htmlspecialchars($cl['name']) ?></td>
+                                    <td class="py-1">
+                                        <div class="flex items-center gap-2">
+                                            <span><?= htmlspecialchars($cl['name']) ?></span>
+                                            <?php if (($cl['status'] ?? 1) == 1): ?>
+                                                <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-semibold">Đang theo dõi</span>
+                                            <?php else: ?>
+                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-semibold">Ngừng theo dõi</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
                                     <td class="text-right whitespace-nowrap py-1">
                                         <?php if (can('departments', 'update')): ?>
                                             <button class="px-2 text-blue-600" onclick='openClassModal(
                                                 <?= $cl["id"] ?>,
                                                 <?= json_encode($cl["name"]) ?>,
                                                 <?= $cl["department_id"] ?>,
-                                                <?= $cl["course_id"] ?>
+                                                <?= $cl["course_id"] ?>,
+                                                <?= $cl["status"] ?? 1 ?>
                                                 )'>
                                                 Sửa
                                             </button>

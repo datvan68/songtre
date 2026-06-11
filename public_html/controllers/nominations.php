@@ -1243,7 +1243,7 @@ try {
       forbidden('FORBIDDEN');
     }
 
-    $stmt = $pdo->query("SELECT id, name FROM courses ORDER BY name ASC");
+    $stmt = $pdo->query("SELECT id, name FROM courses WHERE status = 1 ORDER BY name ASC");
     json_ok(['data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
   }
 
@@ -1267,6 +1267,7 @@ try {
       FROM classes
       WHERE department_id = ?
         AND course_id = ?
+        AND status = 1
       ORDER BY name
     ");
     $stm->execute([$deptId, $courseId]);

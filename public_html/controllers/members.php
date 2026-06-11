@@ -1116,6 +1116,12 @@ try {
             m.current_address,
             m.party_probation_date,
             m.party_official_date,
+            m.is_excellent_member,
+            m.excellent_member_date,
+            m.excellent_member_place,
+            m.learned_party_class,
+            m.party_class_date,
+            m.party_class_place,
 
             d.name AS dept_name,
             d.type AS dept_type,
@@ -1281,6 +1287,28 @@ try {
             // ========================
             // INSERT MEMBERS (QUYẾT ĐỊNH SỐNG CÒN)
             // ========================
+            $type = $_POST['type'] ?? 'member';
+            $isExcellentMember = 0;
+            $excellentMemberDate = null;
+            $excellentMemberPlace = null;
+            $learnedPartyClass = 0;
+            $partyClassDate = null;
+            $partyClassPlace = null;
+
+            if ($type === 'member') {
+                $isExcellentMember = isset($_POST['is_excellent_member']) ? (int)$_POST['is_excellent_member'] : 0;
+                if ($isExcellentMember === 1) {
+                    $excellentMemberDate = !empty($_POST['excellent_member_date']) ? $_POST['excellent_member_date'] : null;
+                    $excellentMemberPlace = !empty($_POST['excellent_member_place']) ? trim($_POST['excellent_member_place']) : null;
+                }
+                
+                $learnedPartyClass = isset($_POST['learned_party_class']) ? (int)$_POST['learned_party_class'] : 0;
+                if ($learnedPartyClass === 1) {
+                    $partyClassDate = !empty($_POST['party_class_date']) ? $_POST['party_class_date'] : null;
+                    $partyClassPlace = !empty($_POST['party_class_place']) ? trim($_POST['party_class_place']) : null;
+                }
+            }
+
             $stmt = $pdo->prepare("
             INSERT INTO members (
               user_id, mssv, fullname,
@@ -1289,9 +1317,11 @@ try {
               type, birth, join_date,
               party_probation_date, party_official_date,
               ethnicity, religion, phone, email,
-              native_place, current_address
+              native_place, current_address,
+              is_excellent_member, excellent_member_date, excellent_member_place,
+              learned_party_class, party_class_date, party_class_place
             )
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ");
 
             $stmt->execute([
@@ -1305,7 +1335,7 @@ try {
                 $classId,
                 $className,
 
-                $_POST['type'],
+                $type,
                 $birth,
                 $join,
                 $partyProbation,
@@ -1316,7 +1346,13 @@ try {
                 $_POST['phone'],
                 $_POST['email'],
                 trim($_POST['native_place'] ?? '') ?: null,
-                trim($_POST['current_address'] ?? '') ?: null
+                trim($_POST['current_address'] ?? '') ?: null,
+                $isExcellentMember,
+                $excellentMemberDate,
+                $excellentMemberPlace,
+                $learnedPartyClass,
+                $partyClassDate,
+                $partyClassPlace
             ]);
 
             // ========================
@@ -1635,6 +1671,28 @@ try {
         }
 
         // ===== UPDATE =====
+        $type = $_POST['type'] ?? 'member';
+        $isExcellentMember = 0;
+        $excellentMemberDate = null;
+        $excellentMemberPlace = null;
+        $learnedPartyClass = 0;
+        $partyClassDate = null;
+        $partyClassPlace = null;
+
+        if ($type === 'member') {
+            $isExcellentMember = isset($_POST['is_excellent_member']) ? (int)$_POST['is_excellent_member'] : 0;
+            if ($isExcellentMember === 1) {
+                $excellentMemberDate = !empty($_POST['excellent_member_date']) ? $_POST['excellent_member_date'] : null;
+                $excellentMemberPlace = !empty($_POST['excellent_member_place']) ? trim($_POST['excellent_member_place']) : null;
+            }
+            
+            $learnedPartyClass = isset($_POST['learned_party_class']) ? (int)$_POST['learned_party_class'] : 0;
+            if ($learnedPartyClass === 1) {
+                $partyClassDate = !empty($_POST['party_class_date']) ? $_POST['party_class_date'] : null;
+                $partyClassPlace = !empty($_POST['party_class_place']) ? trim($_POST['party_class_place']) : null;
+            }
+        }
+
         $stUp = $pdo->prepare("
         UPDATE members SET
           mssv=?, fullname=?,
@@ -1643,7 +1701,9 @@ try {
           type=?, birth=?, join_date=?,
           party_probation_date=?, party_official_date=?,
           ethnicity=?, religion=?, phone=?, email=?,
-          native_place=?, current_address=?
+          native_place=?, current_address=?,
+          is_excellent_member=?, excellent_member_date=?, excellent_member_place=?,
+          learned_party_class=?, party_class_date=?, party_class_place=?
         WHERE id=?
         LIMIT 1
     ");
@@ -1656,7 +1716,7 @@ try {
             $courseId,
             $classId,
             $className,
-            $_POST['type'] ?? 'member',
+            $type,
             $birth,
             $join,
             $partyProbation,
@@ -1667,6 +1727,12 @@ try {
             $_POST['email'] ?? null,
             trim($_POST['native_place'] ?? '') ?: null,
             trim($_POST['current_address'] ?? '') ?: null,
+            $isExcellentMember,
+            $excellentMemberDate,
+            $excellentMemberPlace,
+            $learnedPartyClass,
+            $partyClassDate,
+            $partyClassPlace,
             $id
         ]);
 

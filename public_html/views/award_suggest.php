@@ -19,10 +19,9 @@ $baseUrl = defined('BASE_URL') ? BASE_URL : '/';
 $campaigns = [];
 try {
     $campaigns = $pdo->query("
-    SELECT id, title, school_year, semester, start_date, end_date, status
+    SELECT id, title, school_year, semester_code AS semester, start_date, end_date, status
     FROM campaigns
     ORDER BY start_date DESC, id DESC
-    LIMIT 800
   ")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     $campaigns = [];
@@ -322,14 +321,19 @@ try {
                                         </div>
                                     </div>
 
-                                    <div class="relative w-full overflow-visible" id="ruleCampaignBox">
+                                    <div class="space-y-2">
+                                        <label class="block text-xs font-semibold text-gray-600">Lọc phong trào</label>
                                         <input id="ruleCampaignSearch" type="text"
-                                            class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Gõ tên phong trào hoặc ID..." autocomplete="off" />
-
-                                        <!-- ✅ Dropdown custom -->
-                                        <div id="ruleCampaignDropdown"
-                                            class="absolute left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-72 overflow-auto hidden z-[9999]">
+                                            class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            placeholder="Nhập tên phong trào hoặc ID để lọc..." autocomplete="off" />
+                                        
+                                        <label class="block text-xs font-semibold text-gray-600 mt-2">Danh sách phong trào để chọn</label>
+                                        <div id="ruleCampaignContainer" class="border border-gray-200 rounded-xl p-3 max-h-60 overflow-y-auto space-y-2 bg-white">
+                                            <!-- Sẽ render checkbox các phong trào bằng JS -->
+                                        </div>
+                                        <div class="flex items-center justify-between text-xs text-gray-500 mt-1 px-1">
+                                            <span id="selectedCampaignCount">Đã chọn: 0 phong trào</span>
+                                            <button type="button" id="btnSelectAllCampaigns" class="text-blue-600 hover:underline font-semibold">Chọn tất cả hiển thị</button>
                                         </div>
                                     </div>
 

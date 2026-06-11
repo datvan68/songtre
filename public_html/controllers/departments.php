@@ -61,7 +61,7 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare("
-      SELECT id, name
+      SELECT id, name, status
       FROM courses
       ORDER BY id DESC
       LIMIT :limit OFFSET :offset
@@ -106,7 +106,7 @@ try {
     $whereSql = $where ? "WHERE " . implode(" AND ", $where) : "";
 
     $sql = "
-    SELECT id, name, department_id, course_id
+    SELECT id, name, department_id, course_id, status
     FROM classes
     $whereSql
     ORDER BY name ASC
@@ -252,13 +252,14 @@ try {
 
     $id = (int) ($_POST['id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
+    $status = isset($_POST['status']) ? (int) $_POST['status'] : 1;
     if ($id <= 0 || $name === '') {
       echo json_encode(['ok' => 0, 'error' => 'Thiếu id/tên khóa'], JSON_UNESCAPED_UNICODE);
       exit;
     }
 
-    $stmt = $pdo->prepare("UPDATE courses SET name=? WHERE id=?");
-    $stmt->execute([$name, $id]);
+    $stmt = $pdo->prepare("UPDATE courses SET name=?, status=? WHERE id=?");
+    $stmt->execute([$name, $status, $id]);
 
     log_activity(
       'update',
@@ -340,6 +341,7 @@ try {
     $name = trim($_POST['name'] ?? '');
     $departmentId = (int) ($_POST['department_id'] ?? 0);
     $courseId = (int) ($_POST['course_id'] ?? 0);
+    $status = isset($_POST['status']) ? (int) $_POST['status'] : 1;
 
     if ($id <= 0 || $name === '' || $departmentId <= 0 || $courseId <= 0) {
       echo json_encode(['ok' => 0, 'error' => 'Thiếu dữ liệu cập nhật lớp'], JSON_UNESCAPED_UNICODE);
@@ -348,10 +350,10 @@ try {
 
     $stmt = $pdo->prepare("
       UPDATE classes
-      SET name = ?, department_id = ?, course_id = ?
+      SET name = ?, department_id = ?, course_id = ?, status = ?
       WHERE id = ?
     ");
-    $stmt->execute([$name, $departmentId, $courseId, $id]);
+    $stmt->execute([$name, $departmentId, $courseId, $status, $id]);
 
     log_activity(
       'update',

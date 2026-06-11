@@ -904,336 +904,98 @@
         // ✅ chỉ hiện TÊN phong trào trong ô input
         return String(c.title || "").trim();
     }
-    // ========= Rule Campaign Autocomplete (CUSTOM, không lệch như datalist) =========
-    const ruleCampaignBox = $("ruleCampaignBox");
-    const ruleCampaignDropdown = $("ruleCampaignDropdown");
+    // ========= Rule Campaigns Checkbox List & Filter =========
+    const ruleCampaignContainer = $("ruleCampaignContainer");
+    const selectedCampaignCount = $("selectedCampaignCount");
+    const btnSelectAllCampaigns = $("btnSelectAllCampaigns");
 
     // sort mới -> cũ
     const RULE_CAMPAIGNS = CAMPAIGNS.slice().sort((a, b) => (b.id || 0) - (a.id || 0));
 
-    let RC_OPEN = false;
-    let RC_ACTIVE_INDEX = -1;
-    let RC_LAST_LIST = [];
-
-    // ✅ lưu ID đã chọn theo thứ tự token (để khỏi bị trùng tên gây sai)
-    let RC_SELECTED_IDS = [];
-
-    function openRuleDropdown() {
-        if (!ruleCampaignDropdown) return;
-        ruleCampaignDropdown.classList.remove("hidden");
-        RC_OPEN = true;
+    function updateSelectedCount() {
+        if (!selectedCampaignCount || !ruleCampaignContainer) return;
+        const checkedCount = ruleCampaignContainer.querySelectorAll(".campaign-checkbox:checked").length;
+        selectedCampaignCount.textContent = `Đã chọn: ${checkedCount} phong trào`;
     }
 
-    function closeRuleDropdown() {
-        if (!ruleCampaignDropdown) return;
-        ruleCampaignDropdown.classList.add("hidden");
-        RC_OPEN = false;
-        RC_ACTIVE_INDEX = -1;
-    }
+    function renderCampaignCheckboxes() {
+        if (!ruleCampaignContainer) return;
 
-    // =====================
-    // ✅ MULTI SELECT SEPARATOR: ||
-    // =====================
-    const RULE_SEP = "||";
-    const RULE_SEP_SPLIT_RE = /\s*\|\|\s*/;     // tách token theo ||
-    const RULE_SEP_TAIL_RE = /\s*\|\|\s*$/;     // check cuối chuỗi có || không
-
-    function endsWithRuleSep(v) {
-        return RULE_SEP_TAIL_RE.test(String(v || ""));
-    }
-
-    function getRuleTokensFromInput(v) {
-        // bỏ "||" cuối nếu user đang để " ... || "
-        const raw = String(v || "").replace(RULE_SEP_TAIL_RE, "").trim();
-        if (!raw) return [];
-
-        return raw
-            .split(RULE_SEP_SPLIT_RE)
-            .map((x) => x.trim())
-            .filter(Boolean);
-    }
-
-    function getRuleLastToken(v) {
-        // lấy token cuối để lọc dropdown
-        const raw = String(v || "");
-        const parts = raw.split(RULE_SEP_SPLIT_RE).map((x) => x.trim());
-        return String(parts[parts.length - 1] || "").trim();
-    }
-
-    function setRuleTokensToInput(tokens, addSepTail = true) {
-        const clean = (tokens || [])
-            .map((x) => String(x || "").trim())
-            .filter(Boolean);
-
-        // hiển thị đẹp: "A || B || "
-        ruleCampaignSearch.value =
-            clean.join(" || ") + (addSepTail ? " || " : "");
-    }
-
-
-    function syncSelectedIdsWithInput() {
-        const tokens = getRuleTokensFromInput(ruleCampaignSearch.value);
-
-        // user xóa bớt => cắt mảng id theo
-        if (tokens.length < RC_SELECTED_IDS.length) {
-            RC_SELECTED_IDS = RC_SELECTED_IDS.slice(0, tokens.length);
+        if (!RULE_CAMPAIGNS.length) {
+            ruleCampaignContainer.innerHTML = `
+                <div class="text-xs text-gray-500 py-2 text-center">
+                    Không có phong trào nào.
+                </div>
+            `;
             return;
         }
 
-        // user đang gõ token mới => tokens = selected + 1 => ok
-        if (tokens.length === RC_SELECTED_IDS.length) return;
-        if (tokens.length === RC_SELECTED_IDS.length + 1) return;
-
-        // nếu lệch quá => user sửa giữa chừng => reset
-        RC_SELECTED_IDS = [];
-    }
-
-
-    function filterRuleCampaigns(inputValue) {
-        // ✅ chỉ lọc theo token cuối cùng sau dấu phẩy
-        const last = getRuleLastToken(inputValue);
-        const s = String(last || "").trim().toLowerCase();
-
-        if (!s) return RULE_CAMPAIGNS.slice(0, 12);
-
-        // nếu nhập số -> ưu tiên match ID
-        const idMatch = s.match(/^(\d+)/);
-        const numeric = idMatch ? parseInt(idMatch[1], 10) : 0;
-
-        let list = RULE_CAMPAIGNS.filter((c) => {
-            const idStr = String(c.id || "");
-            const title = String(c.title || "").toLowerCase();
-
-            if (numeric) {
-                if (idStr.startsWith(String(numeric))) return true;
-            }
-            return title.includes(s) || idStr.includes(s);
-        });
-
-        return list.slice(0, 12);
-    }
-    function inputEndsWithComma(v) {
-        return /,\s*$/.test(String(v || ""));
-    }
-
-    function renderRuleDropdown(list) {
-        if (!ruleCampaignDropdown) return;
-
-        RC_LAST_LIST = Array.isArray(list) ? list : [];
-        RC_ACTIVE_INDEX = -1;
-
-        if (!RC_LAST_LIST.length) {
-            ruleCampaignDropdown.innerHTML = `
-          <div class="px-4 py-3 text-sm text-gray-500">
-            Không có kết quả phù hợp
-          </div>
-        `;
-            openRuleDropdown();
-            return;
-        }
-
-        ruleCampaignDropdown.innerHTML = RC_LAST_LIST.map((c, idx) => {
+        ruleCampaignContainer.innerHTML = RULE_CAMPAIGNS.map(c => {
             const title = esc(String(c.title || "").trim() || "(Không có tên)");
             const y = esc(c.school_year || "-");
             const sem = esc(c.semester || "-");
             const id = esc(c.id);
+            const searchVal = normText(c.title + " " + c.id);
 
             return `
-          <button
-            type="button"
-            class="rule-camp-opt w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-b-0"
-            data-idx="${idx}"
-            data-id="${id}"
-          >
-            <div class="text-sm font-semibold text-gray-900">
-              ${title}
-            </div>
-            <div class="text-xs text-gray-500 mt-0.5">
-              ${y} / ${sem} • ID: <span class="font-semibold text-gray-700">${id}</span>
-            </div>
-          </button>
-        `;
+                <label class="campaign-item flex items-start gap-2 py-1.5 px-2 hover:bg-gray-50 rounded-lg cursor-pointer transition text-xs" data-id="${id}" data-search="${searchVal}">
+                    <input type="checkbox" class="campaign-checkbox mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" value="${id}" />
+                    <span class="text-gray-700 leading-tight">
+                        <b>${title}</b> 
+                        <span class="text-gray-400 font-normal ml-1">(Năm học: ${y} • HK: ${sem} • ID: ${id})</span>
+                    </span>
+                </label>
+            `;
         }).join("");
 
-        // bind click
-        ruleCampaignDropdown.querySelectorAll(".rule-camp-opt").forEach((btn) => {
-            btn.addEventListener("click", () => {
-                const idx = parseInt(btn.dataset.idx || "-1", 10);
-                const c = RC_LAST_LIST[idx];
-                if (!c) return;
-
-                const inputVal = ruleCampaignSearch.value || "";
-                const endsComma = inputEndsWithComma(inputVal);
-                const lastToken = getRuleLastToken(inputVal);
-                const tokens = getRuleTokensFromInput(inputVal);
-
-                let nextTokens = [];
-
-                // ✅ nếu đang "Phong trào A, " => append thêm phong trào mới
-                if (endsComma || !lastToken) {
-                    nextTokens = tokens.concat([campaignDisplay(c)]);
-                    RC_SELECTED_IDS = RC_SELECTED_IDS.slice(0, tokens.length);
-                } else {
-                    // ✅ nếu đang gõ "Phong trào A, ho..." => replace token đang gõ
-                    const prefix = tokens.length ? tokens.slice(0, -1) : [];
-                    nextTokens = prefix.concat([campaignDisplay(c)]);
-                    RC_SELECTED_IDS = RC_SELECTED_IDS.slice(0, prefix.length);
-                }
-
-                RC_SELECTED_IDS.push(parseInt(c.id, 10));
-
-                setRuleTokensToInput(nextTokens, true);
-
-                // ✅ chọn xong vẫn show danh sách tiếp để chọn nhiều cái
-                renderRuleDropdown(filterRuleCampaigns(ruleCampaignSearch.value));
-            });
+        // Bind event change cho các checkbox vừa tạo
+        ruleCampaignContainer.querySelectorAll(".campaign-checkbox").forEach(chk => {
+            chk.addEventListener("change", updateSelectedCount);
         });
 
-
-        openRuleDropdown();
+        updateSelectedCount();
     }
 
-    function highlightActiveOption() {
-        if (!ruleCampaignDropdown) return;
-        const opts = ruleCampaignDropdown.querySelectorAll(".rule-camp-opt");
-        opts.forEach((o) => o.classList.remove("bg-blue-50"));
-
-        if (RC_ACTIVE_INDEX >= 0 && RC_ACTIVE_INDEX < opts.length) {
-            opts[RC_ACTIVE_INDEX].classList.add("bg-blue-50");
-            opts[RC_ACTIVE_INDEX].scrollIntoView({ block: "nearest" });
-        }
-    }
-
-    // input events
+    // Lọc danh sách checkbox theo ô tìm kiếm
     ruleCampaignSearch?.addEventListener("input", () => {
-        syncSelectedIdsWithInput();
+        const q = normText(ruleCampaignSearch.value);
+        const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+        const items = ruleCampaignContainer?.querySelectorAll(".campaign-item") || [];
 
-        const list = filterRuleCampaigns(ruleCampaignSearch.value);
-        renderRuleDropdown(list);
-    });
-
-    ruleCampaignSearch?.addEventListener("focus", () => {
-        syncSelectedIdsWithInput();
-        const list = filterRuleCampaigns(ruleCampaignSearch.value);
-        renderRuleDropdown(list);
-    });
-
-    ruleCampaignSearch?.addEventListener("keydown", (e) => {
-        if (!RC_OPEN) return;
-
-        if (e.key === "Escape") {
-            closeRuleDropdown();
-            return;
-        }
-
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            RC_ACTIVE_INDEX = Math.min(RC_ACTIVE_INDEX + 1, RC_LAST_LIST.length - 1);
-            highlightActiveOption();
-            return;
-        }
-
-        if (e.key === "ArrowUp") {
-            e.preventDefault();
-            RC_ACTIVE_INDEX = Math.max(RC_ACTIVE_INDEX - 1, 0);
-            highlightActiveOption();
-            return;
-        }
-
-        if (e.key === "Enter") {
-            if (RC_ACTIVE_INDEX >= 0 && RC_ACTIVE_INDEX < RC_LAST_LIST.length) {
-                e.preventDefault();
-                const c = RC_LAST_LIST[RC_ACTIVE_INDEX];
-                if (!c) return;
-
-                const inputVal = ruleCampaignSearch.value || "";
-                const endsComma = inputEndsWithComma(inputVal);
-                const lastToken = getRuleLastToken(inputVal);
-                const tokens = getRuleTokensFromInput(inputVal);
-
-                let nextTokens = [];
-
-                if (endsComma || !lastToken) {
-                    nextTokens = tokens.concat([campaignDisplay(c)]);
-                    RC_SELECTED_IDS = RC_SELECTED_IDS.slice(0, tokens.length);
-                } else {
-                    const prefix = tokens.length ? tokens.slice(0, -1) : [];
-                    nextTokens = prefix.concat([campaignDisplay(c)]);
-                    RC_SELECTED_IDS = RC_SELECTED_IDS.slice(0, prefix.length);
-                }
-
-                RC_SELECTED_IDS.push(parseInt(c.id, 10));
-
-                setRuleTokensToInput(nextTokens, true);
-                renderRuleDropdown(filterRuleCampaigns(ruleCampaignSearch.value));
-            }
-        }
-
-    });
-
-    // click outside => đóng dropdown
-    document.addEventListener("click", (e) => {
-        if (!ruleCampaignBox) return;
-        if (!ruleCampaignBox.contains(e.target)) closeRuleDropdown();
-    });
-
-
-
-    function parseCampaignIdFromInput(v) {
-        const s = String(v || "").trim();
-        if (!s) return 0;
-        const m = s.match(/^(\d+)/);
-        return m ? parseInt(m[1], 10) : 0;
-    }
-
-    function parseCampaignIdsFromInputMulti(v) {
-        const raw = String(v || "").trim();
-        if (!raw) return { ids: [], invalid: [] };
-
-        const parts = raw.split(",").map(x => x.trim()).filter(Boolean);
-
-        let ids = [];
-        let invalid = [];
-
-        parts.forEach((p) => {
-            const m = p.match(/^(\d+)/); // lấy số ở đầu chuỗi
-            if (m) {
-                const n = parseInt(m[1], 10);
-                if (Number.isFinite(n) && n > 0) ids.push(n);
-                else invalid.push(p);
+        items.forEach(item => {
+            const searchVal = item.getAttribute("data-search") || "";
+            const isMatch = tokens.every(t => searchVal.includes(t));
+            if (isMatch) {
+                item.style.display = "flex";
             } else {
-                invalid.push(p);
+                item.style.display = "none";
             }
         });
+    });
 
-        // unique
-        ids = Array.from(new Set(ids));
-        return { ids, invalid };
-    }
+    // Chọn tất cả các checkbox đang hiển thị
+    btnSelectAllCampaigns?.addEventListener("click", () => {
+        if (!ruleCampaignContainer) return;
+        const visibleCheckboxes = [...ruleCampaignContainer.querySelectorAll(".campaign-item")]
+            .filter(item => item.style.display !== "none")
+            .map(item => item.querySelector(".campaign-checkbox"))
+            .filter(Boolean);
 
-    function getSelectedCampaignIds() {
-        // Nếu user đã chọn 1 phong trào từ dropdown (dataset.campaignId)
-        const ds = ruleCampaignSearch?.dataset?.campaignId || "";
-        const single = parseInt(ds, 10);
+        if (!visibleCheckboxes.length) return;
 
-        // Nếu input có dấu phẩy => coi như multi
-        const hasComma = String(ruleCampaignSearch?.value || "").includes(",");
+        // Nếu tất cả visible đã được check -> bỏ chọn hết
+        // Ngược lại -> check hết
+        const allChecked = visibleCheckboxes.every(chk => chk.checked);
+        visibleCheckboxes.forEach(chk => {
+            chk.checked = !allChecked;
+        });
 
-        if (Number.isFinite(single) && single > 0 && !hasComma) {
-            return { ids: [single], invalid: [] };
-        }
+        updateSelectedCount();
+    });
 
-        // Multi mode: parse theo dấu ,
-        const parsed = parseCampaignIdsFromInputMulti(ruleCampaignSearch?.value || "");
+    // Gọi hàm render danh sách phong trào ngay khi khởi tạo
+    renderCampaignCheckboxes();
 
-        // nếu có ds mà chưa nằm trong list thì thêm vào (trường hợp lỡ chọn dropdown rồi gõ thêm)
-        if (Number.isFinite(single) && single > 0 && !parsed.ids.includes(single)) {
-            parsed.ids.unshift(single);
-            parsed.ids = Array.from(new Set(parsed.ids));
-        }
-
-        return parsed;
-    }
 
 
     function renderRuleItems() {
@@ -1405,32 +1167,15 @@
     btnAddRuleItem?.addEventListener("click", () => {
         const req = ruleRequiredStatus?.value || "excellent";
 
-        const tokens = getRuleTokensFromInput(ruleCampaignSearch.value);
-        if (!tokens.length) {
-            toast("Chưa nhập phong trào nào.", "error");
+        if (!ruleCampaignContainer) return;
+        const checkedCheckboxes = ruleCampaignContainer.querySelectorAll(".campaign-checkbox:checked");
+        if (!checkedCheckboxes.length) {
+            toast("Vui lòng tích chọn ít nhất một phong trào trong danh sách.", "error");
             return;
         }
 
-        // ✅ ưu tiên dùng RC_SELECTED_IDS (đúng tuyệt đối dù trùng tên)
-        let ids = [];
-        if (RC_SELECTED_IDS.length >= tokens.length) {
-            ids = RC_SELECTED_IDS.slice(0, tokens.length);
-        } else {
-            // fallback: nếu user tự gõ ID, vẫn parse được
-            ids = tokens
-                .map((t) => {
-                    const m = String(t).trim().match(/^(\d+)/);
-                    return m ? parseInt(m[1], 10) : 0;
-                })
-                .filter((x) => Number.isFinite(x) && x > 0);
-        }
-
+        let ids = [...checkedCheckboxes].map(chk => parseInt(chk.value, 10)).filter(Boolean);
         ids = Array.from(new Set(ids));
-
-        if (!ids.length) {
-            toast("Không nhận diện được phong trào. Hãy chọn từ dropdown hoặc nhập ID.", "error");
-            return;
-        }
 
         let added = 0;
         let skipped = 0;
@@ -1452,10 +1197,11 @@
 
         renderRuleItems();
 
-        // reset input
-        ruleCampaignSearch.value = "";
-        RC_SELECTED_IDS = [];
-        closeRuleDropdown();
+        // Reset: bỏ check các checkbox đã thêm
+        checkedCheckboxes.forEach(chk => {
+            chk.checked = false;
+        });
+        updateSelectedCount();
 
         if (added && skipped) {
             toast("Đã thêm " + added + " phong trào (" + skipped + " cái đã có sẵn).", "success");

@@ -3072,10 +3072,10 @@
         <!-- Sub Tabs trong Modal -->
         <div class="flex border-b border-gray-200">
           <button id="mSubTabUnpaid" class="px-4 py-2 text-sm font-semibold border-b-2 border-emerald-600 text-emerald-600 focus:outline-none transition-colors flex items-center gap-2">
-            Chưa đóng tiền <span id="mBadgeUnpaid" class="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">0</span>
+            Chưa đóng đủ <span id="mBadgeUnpaid" class="bg-rose-100 text-rose-700 text-xs px-2 py-0.5 rounded-full">0</span>
           </button>
           <button id="mSubTabPaid" class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 focus:outline-none transition-colors flex items-center gap-2">
-            Đã đóng tiền <span id="mBadgePaid" class="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full">0</span>
+            Đã đóng đủ <span id="mBadgePaid" class="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full">0</span>
           </button>
         </div>
 
@@ -3090,10 +3090,12 @@
                   <th class="px-4 py-2">Tên lớp</th>
                   <th class="px-4 py-2">Khoa / Phòng</th>
                   <th class="px-4 py-2">Khóa</th>
+                  <th class="px-4 py-2 text-center w-[120px]">Đã đóng</th>
+                  <th class="px-4 py-2 text-center w-[90px]">Thao tác</th>
                 </tr>
               </thead>
               <tbody id="mUnpaidTbody" class="divide-y">
-                <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Đang tải đối chiếu dữ liệu...</td></tr>
+                <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">Đang tải đối chiếu dữ liệu...</td></tr>
               </tbody>
             </table>
           </div>
@@ -3105,10 +3107,10 @@
                 <tr class="text-left text-xs font-semibold text-gray-600 uppercase">
                   <th class="px-4 py-2 w-[60px] text-center">STT</th>
                   <th class="px-4 py-2">Tên lớp</th>
-                  <th class="px-4 py-2">Người nộp</th>
-                  <th class="px-4 py-2 text-right">Số tiền</th>
-                  <th class="px-4 py-2 text-center">Số phiếu</th>
-                  <th class="px-4 py-2 text-center">Ngày nộp</th>
+                  <th class="px-4 py-2">Khoa / Phòng</th>
+                  <th class="px-4 py-2">Khóa</th>
+                  <th class="px-4 py-2 text-center w-[120px]">Đã đóng</th>
+                  <th class="px-4 py-2 text-center w-[90px]">Thao tác</th>
                 </tr>
               </thead>
               <tbody id="mPaidTbody" class="divide-y">
@@ -3139,6 +3141,78 @@
 
     let modalData = { unpaid: [], paid: [] };
 
+    // Hàm mở popup xem chi tiết thành viên lớp và trạng thái đóng tiền
+    async function openClassMembersPaymentModal(classId, className) {
+      try {
+        const members = await api("class_member_payments", {
+          class_id: classId,
+          item_name: itemName,
+          school_year_id: schoolYearId,
+          semester: semester
+        });
+
+        const mHtml = `
+          <div id="classMembersModalRoot" class="space-y-4">
+            <div class="bg-gray-50 rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-4">
+              <div>
+                <div class="text-xs text-gray-500 font-semibold uppercase">Đang xem lớp</div>
+                <div class="font-bold text-gray-900 text-base leading-snug">${escapeHtml(className)}</div>
+                <div class="text-xs text-gray-600 mt-0.5 font-medium">Khoản thu: ${escapeHtml(itemName)}</div>
+              </div>
+            </div>
+
+            <div class="border rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50 border-b">
+                  <tr class="text-left text-xs font-semibold text-gray-600 uppercase">
+                    <th class="px-4 py-2 w-[60px] text-center">STT</th>
+                    <th class="px-4 py-2 w-[120px]">MSSV</th>
+                    <th class="px-4 py-2">Họ và tên</th>
+                    <th class="px-4 py-2 text-center w-[120px]">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  ${members.length === 0 
+                    ? `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Lớp này chưa có sinh viên nào.</td></tr>`
+                    : members.map((m, idx) => {
+                        const badge = m.has_paid > 0 
+                          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Đã đóng</span>`
+                          : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100">Chưa đóng</span>`;
+                        return `
+                          <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-2 text-center text-gray-500">${idx + 1}</td>
+                            <td class="px-4 py-2 font-mono text-xs">${escapeHtml(m.mssv || "--")}</td>
+                            <td class="px-4 py-2 font-medium">${escapeHtml(m.fullname)}</td>
+                            <td class="px-4 py-2 text-center">${badge}</td>
+                          </tr>
+                        `;
+                      }).join("")
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="flex justify-end pt-2">
+              <button type="button" class="px-4 py-1.5 border rounded-lg hover:bg-gray-50 text-sm font-semibold" id="btnBackToUnpaid">
+                Quay lại
+              </button>
+            </div>
+          </div>
+        `;
+
+        modal(mHtml, "Chi tiết thành viên đóng tiền", "medium");
+
+        const mRoot = document.getElementById("classMembersModalRoot");
+        if (mRoot) {
+          mRoot.querySelector("#btnBackToUnpaid").onclick = () => {
+            openUnpaidClassesModal(row); // Mở lại popup thống kê lớp
+          };
+        }
+      } catch (e) {
+        toast(e.message);
+      }
+    }
+
     const loadData = async () => {
       try {
         const data = await api("unpaid_classes", {
@@ -3160,38 +3234,77 @@
         const unpaidTbody = root.querySelector("#mUnpaidTbody");
         if (unpaidTbody) {
           unpaidTbody.innerHTML = modalData.unpaid.length === 0
-            ? `<tr><td colspan="4" class="px-4 py-6 text-center text-emerald-600 font-semibold">Tất cả các lớp đã hoàn thành đóng tiền!</td></tr>`
-            : modalData.unpaid.map((r, i) => `
-                <tr class="hover:bg-gray-50">
-                  <td class="px-4 py-2 text-center text-gray-500">${i + 1}</td>
-                  <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(r.class_name)}</td>
-                  <td class="px-4 py-2">${escapeHtml(r.department_name || "--")}</td>
-                  <td class="px-4 py-2 font-mono text-xs text-gray-500">${escapeHtml(r.course_name || "--")}</td>
-                </tr>
-              `).join("");
+            ? `<tr><td colspan="6" class="px-4 py-6 text-center text-emerald-600 font-semibold">Tất cả các lớp đã hoàn thành đóng tiền!</td></tr>`
+            : modalData.unpaid.map((r, i) => {
+                const ratio = `${r.paid_count}/${r.total_count}`;
+                const pct = r.total_count > 0 ? Math.round((r.paid_count / r.total_count) * 100) : 0;
+                let badgeClass = "bg-rose-50 text-rose-700 border border-rose-100";
+                if (r.paid_count > 0) {
+                  badgeClass = "bg-amber-50 text-amber-700 border border-amber-100";
+                }
+                return `
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-2 text-center text-gray-500">${i + 1}</td>
+                    <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(r.class_name)}</td>
+                    <td class="px-4 py-2">${escapeHtml(r.department_name || "--")}</td>
+                    <td class="px-4 py-2 font-mono text-xs text-gray-500">${escapeHtml(r.course_name || "--")}</td>
+                    <td class="px-4 py-2 text-center">
+                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeClass}">
+                        ${ratio} (${pct}%)
+                      </span>
+                    </td>
+                    <td class="px-4 py-2 text-center">
+                      <button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-semibold btn-view-class-members" data-class-id="${r.class_id}" data-class-name="${escapeHtml(r.class_name)}">
+                        Chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join("");
         }
 
         // Render bảng đã đóng
         const paidTbody = root.querySelector("#mPaidTbody");
         if (paidTbody) {
           paidTbody.innerHTML = modalData.paid.length === 0
-            ? `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Chưa có lớp nào đóng tiền.</td></tr>`
-            : modalData.paid.map((r, i) => `
-                <tr class="hover:bg-gray-50">
-                  <td class="px-4 py-2 text-center text-gray-500">${i + 1}</td>
-                  <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(r.class_name)}</td>
-                  <td class="px-4 py-2">${escapeHtml(r.payer_name || "--")}</td>
-                  <td class="px-4 py-2 text-right font-bold text-emerald-700">${fmtMoney(r.amount)}</td>
-                  <td class="px-4 py-2 text-center font-mono text-xs text-blue-600">${escapeHtml(r.voucher_code || "--")}</td>
-                  <td class="px-4 py-2 text-center text-gray-600">${fmtDate(r.trans_date)}</td>
-                </tr>
-              `).join("");
+            ? `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">Chưa có lớp nào đóng tiền đủ 100%.</td></tr>`
+            : modalData.paid.map((r, i) => {
+                const ratio = `${r.paid_count}/${r.total_count}`;
+                return `
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-2 text-center text-gray-500">${i + 1}</td>
+                    <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(r.class_name)}</td>
+                    <td class="px-4 py-2">${escapeHtml(r.department_name || "--")}</td>
+                    <td class="px-4 py-2 font-mono text-xs text-gray-500">${escapeHtml(r.course_name || "--")}</td>
+                    <td class="px-4 py-2 text-center">
+                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        ${ratio} (100%)
+                      </span>
+                    </td>
+                    <td class="px-4 py-2 text-center">
+                      <button type="button" class="text-blue-600 hover:text-blue-800 text-xs font-semibold btn-view-class-members" data-class-id="${r.class_id}" data-class-name="${escapeHtml(r.class_name)}">
+                        Chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join("");
         }
 
       } catch (e) {
         toast(e.message);
       }
     };
+
+    // Đăng ký sự kiện click xem chi tiết thành viên lớp
+    root.addEventListener("click", (e) => {
+      const btn = e.target.closest(".btn-view-class-members");
+      if (btn) {
+        const classId = Number(btn.dataset.classId);
+        const className = btn.dataset.className;
+        openClassMembersPaymentModal(classId, className);
+      }
+    });
 
     // Đăng ký sự kiện đổi bộ lọc
     if (selDept) selDept.addEventListener("change", loadData);

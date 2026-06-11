@@ -1537,6 +1537,57 @@ async function openMemberModal(id) {
     class="w-full px-3 py-2 border rounded-lg">
 </div>
 
+<!-- =======================
+     ĐOÀN VIÊN ƯU TÚ & CẢM TÌNH ĐẢNG
+====================== -->
+<div id="excellentMemberWrap" class="md:col-span-2 space-y-3" style="display: none;">
+  <div>
+    <label class="inline-flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" name="is_excellent_member" id="isExcellentMember" value="1"
+        ${Number(data.is_excellent_member ?? 0) === 1 ? "checked" : ""}
+        class="w-4 h-4">
+      <span class="text-sm font-medium">Là đoàn viên ưu tú</span>
+    </label>
+  </div>
+
+  <div id="excellentMemberFieldsWrap" class="grid grid-cols-1 md:grid-cols-2 gap-3" style="display: none;">
+    <div>
+      <label class="block text-sm">Ngày công nhận ưu tú</label>
+      <input type="date" name="excellent_member_date" value="${data.excellent_member_date ?? ""}"
+        class="w-full px-3 py-2 border rounded-lg">
+    </div>
+    <div>
+      <label class="block text-sm">Nơi công nhận</label>
+      <input type="text" name="excellent_member_place" value="${data.excellent_member_place ?? ""}"
+        placeholder="Nơi cấp/công nhận"
+        class="w-full px-3 py-2 border rounded-lg">
+    </div>
+  </div>
+
+  <div>
+    <label class="inline-flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" name="learned_party_class" id="learnedPartyClass" value="1"
+        ${Number(data.learned_party_class ?? 0) === 1 ? "checked" : ""}
+        class="w-4 h-4">
+      <span class="text-sm font-medium">Đã học lớp cảm tình Đảng</span>
+    </label>
+  </div>
+
+  <div id="partyClassFieldsWrap" class="grid grid-cols-1 md:grid-cols-2 gap-3" style="display: none;">
+    <div>
+      <label class="block text-sm">Thời gian học cảm tình Đảng</label>
+      <input type="date" name="party_class_date" value="${data.party_class_date ?? ""}"
+        class="w-full px-3 py-2 border rounded-lg">
+    </div>
+    <div>
+      <label class="block text-sm">Địa điểm học cảm tình Đảng</label>
+      <input type="text" name="party_class_place" value="${data.party_class_place ?? ""}"
+        placeholder="Địa điểm học"
+        class="w-full px-3 py-2 border rounded-lg">
+    </div>
+  </div>
+</div>
+
       <div>
         <label class="block text-sm">Ngày sinh</label>
         <input type="date" name="birth" value="${data.birth ?? ""}"
@@ -1901,12 +1952,58 @@ async function openMemberModal(id) {
 
 
   }
+  const excellentWrap = wrap.querySelector("#excellentMemberWrap");
+  const chkExcellent = wrap.querySelector("#isExcellentMember");
+  const excellentFieldsWrap = wrap.querySelector("#excellentMemberFieldsWrap");
+  const chkPartyClass = wrap.querySelector("#learnedPartyClass");
+  const partyClassFieldsWrap = wrap.querySelector("#partyClassFieldsWrap");
+
+  function toggleExcellentMember() {
+    if (typeSelect.value === "member") {
+      excellentWrap.style.display = "";
+    } else {
+      excellentWrap.style.display = "none";
+      chkExcellent.checked = false;
+      chkPartyClass.checked = false;
+      toggleExcellentMemberFields();
+      togglePartyClassFields();
+    }
+  }
+
+  function toggleExcellentMemberFields() {
+    if (chkExcellent.checked) {
+      excellentFieldsWrap.style.display = "";
+    } else {
+      excellentFieldsWrap.style.display = "none";
+      wrap.querySelector('input[name="excellent_member_date"]').value = "";
+      wrap.querySelector('input[name="excellent_member_place"]').value = "";
+    }
+  }
+
+  function togglePartyClassFields() {
+    if (chkPartyClass.checked) {
+      partyClassFieldsWrap.style.display = "";
+    } else {
+      partyClassFieldsWrap.style.display = "none";
+      wrap.querySelector('input[name="party_class_date"]').value = "";
+      wrap.querySelector('input[name="party_class_place"]').value = "";
+    }
+  }
+
   // chạy ngay khi mở modal (edit / add đều đúng)
   toggleJoinDate();
+  toggleExcellentMember();
+  toggleExcellentMemberFields();
+  togglePartyClassFields();
   togglePartyDates();
   chkParty.addEventListener("change", togglePartyDates);
   // lắng nghe thay đổi
-  typeSelect.addEventListener("change", toggleJoinDate);
+  typeSelect.addEventListener("change", () => {
+    toggleJoinDate();
+    toggleExcellentMember();
+  });
+  chkExcellent.addEventListener("change", toggleExcellentMemberFields);
+  chkPartyClass.addEventListener("change", togglePartyClassFields);
 
 
   function renderClasses() {

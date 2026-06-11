@@ -1121,6 +1121,7 @@ try {
                 $courses = $pdo->query("
             SELECT id, name
             FROM courses
+            WHERE status = 1
             ORDER BY name ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
@@ -1366,7 +1367,7 @@ try {
                 $stmt = $pdo->prepare("
                     SELECT id, name
                     FROM classes
-                    WHERE department_id = ? AND course_id = ?
+                    WHERE department_id = ? AND course_id = ? AND status = 1
                     ORDER BY name ASC
                     LIMIT 300
                 ");
@@ -1375,7 +1376,7 @@ try {
                 $stmt = $pdo->prepare("
                     SELECT id, name
                     FROM classes
-                    WHERE department_id = ?
+                    WHERE department_id = ? AND status = 1
                     ORDER BY name ASC
                     LIMIT 300
                 ");
@@ -2111,77 +2112,128 @@ try {
             $deptId = isset($input['department_id']) && $input['department_id'] !== '' ? (int) $input['department_id'] : null;
             $courseId = isset($input['course_id']) && $input['course_id'] !== '' ? (int) $input['course_id'] : null;
 
-            // Tìm các lớp chưa đóng tiền
-            $unpaidSql = "
+            // Truy vấn lấy sĩ số lớp và số sinh viên đã đóng tiền cho khoản thu tương ứng
+            $sql = "
                 SELECT 
                     c.id AS class_id,
                     c.name AS class_name,
                     d.name AS department_name,
-                    co.name AS course_name
+                    co.name AS course_name,
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    COALESCE(
+                        NULLIF(
+                            (
+                                SELECT COUNT(DISTINCT ftp.member_id)
+                                FROM finance_transaction_participants ftp
+                                JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                WHERE t.type = 'income'
+                                  AND t.item_name = ?
+                                  AND (? IS NULL OR t.school_year_id = ?)
+                                  AND (? IS NULL OR t.semester = ?)
+                                  AND ftp.class_text = c.name
+                            ),
+                            0
+                        ),
+                        (
+                            SELECT COALESCE(SUM(t.quantity), 0)
+                            FROM finance_transactions t
+                            WHERE t.type = 'income'
+                              AND t.item_name = ?
+                              AND (? IS NULL OR t.school_year_id = ?)
+                              AND (? IS NULL OR t.semester = ?)
+                              AND t.class_text = c.name
+                        )
+                    ) AS paid_count
                 FROM classes c
                 LEFT JOIN departments d ON d.id = c.department_id
                 LEFT JOIN courses co ON co.id = c.course_id
                 WHERE 1
                   AND (? IS NULL OR c.department_id = ?)
                   AND (? IS NULL OR c.course_id = ?)
-                  AND c.name NOT IN (
-                      SELECT DISTINCT t.class_text
-                      FROM finance_transactions t
-                      WHERE t.type = 'income'
-                        AND t.item_name = ?
-                        AND (? IS NULL OR t.school_year_id = ?)
-                        AND (? IS NULL OR t.semester = ?)
-                        AND t.class_text IS NOT NULL
-                  )
                 ORDER BY d.name ASC, co.name DESC, c.name ASC
             ";
-            $stUnpaid = $pdo->prepare($unpaidSql);
-            $stUnpaid->execute([
-                $deptId, $deptId,
-                $courseId, $courseId,
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
                 $itemName,
                 $schoolYearId, $schoolYearId,
-                $semester, $semester
-            ]);
-            $unpaid = $stUnpaid->fetchAll(PDO::FETCH_ASSOC);
-
-            // Tìm các lớp đã đóng tiền
-            $paidSql = "
-                SELECT 
-                    c.id AS class_id,
-                    c.name AS class_name,
-                    d.name AS department_name,
-                    co.name AS course_name,
-                    t.code AS voucher_code,
-                    t.amount,
-                    t.trans_date,
-                    t.payer_name
-                FROM classes c
-                LEFT JOIN departments d ON d.id = c.department_id
-                LEFT JOIN courses co ON co.id = c.course_id
-                JOIN finance_transactions t ON t.class_text = c.name
-                WHERE t.type = 'income'
-                  AND t.item_name = ?
-                  AND (? IS NULL OR t.school_year_id = ?)
-                  AND (? IS NULL OR t.semester = ?)
-                  AND (? IS NULL OR c.department_id = ?)
-                  AND (? IS NULL OR c.course_id = ?)
-                ORDER BY t.trans_date DESC, c.name ASC
-            ";
-            $stPaid = $pdo->prepare($paidSql);
-            $stPaid->execute([
+                $semester, $semester,
                 $itemName,
                 $schoolYearId, $schoolYearId,
                 $semester, $semester,
                 $deptId, $deptId,
                 $courseId, $courseId
             ]);
-            $paid = $stPaid->fetchAll(PDO::FETCH_ASSOC);
+            $allClasses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $unpaid = [];
+            $paid = [];
+
+            foreach ($allClasses as $row) {
+                $tc = (int) $row['total_count'];
+                $pc = (int) $row['paid_count'];
+
+                $row['total_count'] = $tc;
+                $row['paid_count'] = $pc;
+
+                if ($pc >= $tc && $tc > 0) {
+                    $paid[] = $row;
+                } else {
+                    $unpaid[] = $row;
+                }
+            }
 
             json_ok([
                 'unpaid' => $unpaid,
                 'paid' => $paid
             ]);
+            break;
+        }
+
+        case 'class_member_payments': {
+            require_can('finance', 'view');
+            $input = read_json();
+
+            $classId = isset($input['class_id']) ? (int) $input['class_id'] : 0;
+            $itemName = trim((string) ($input['item_name'] ?? ''));
+            if ($classId <= 0 || $itemName === '') {
+                json_err('Thiếu thông tin lớp hoặc khoản thu');
+            }
+
+            $schoolYearId = isset($input['school_year_id']) && $input['school_year_id'] !== '' ? (int) $input['school_year_id'] : null;
+            $semester = validate_semester_or_null($pdo, $input['semester'] ?? null);
+
+            // Lấy danh sách thành viên của lớp và trạng thái đóng tiền của họ
+            $sql = "
+                SELECT 
+                    m.id AS member_id,
+                    COALESCE(NULLIF(m.fullname, ''), m.mssv) AS fullname,
+                    m.mssv,
+                    (
+                        SELECT COUNT(1)
+                        FROM finance_transaction_participants ftp
+                        JOIN finance_transactions t ON t.id = ftp.transaction_id
+                        WHERE t.type = 'income'
+                          AND t.item_name = ?
+                          AND (? IS NULL OR t.school_year_id = ?)
+                          AND (? IS NULL OR t.semester = ?)
+                          AND ftp.member_id = m.id
+                    ) AS has_paid
+                FROM members m
+                WHERE m.class_id = ?
+                ORDER BY m.fullname ASC, m.mssv ASC
+            ";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $itemName,
+                $schoolYearId, $schoolYearId,
+                $semester, $semester,
+                $classId
+            ]);
+            $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            json_ok($members);
             break;
         }
 
@@ -2356,36 +2408,55 @@ try {
             $deptId = isset($_GET['department_id']) && $_GET['department_id'] !== '' ? (int) $_GET['department_id'] : null;
             $courseId = isset($_GET['course_id']) && $_GET['course_id'] !== '' ? (int) $_GET['course_id'] : null;
 
-            // Tìm các lớp chưa đóng tiền
-            $unpaidSql = "
+            // Tìm các lớp chưa đóng đủ tiền
+            $sql = "
                 SELECT 
                     c.name AS class_name,
                     d.name AS department_name,
-                    co.name AS course_name
+                    co.name AS course_name,
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    COALESCE(
+                        NULLIF(
+                            (
+                                SELECT COUNT(DISTINCT ftp.member_id)
+                                FROM finance_transaction_participants ftp
+                                JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                WHERE t.type = 'income'
+                                  AND t.item_name = ?
+                                  AND (? IS NULL OR t.school_year_id = ?)
+                                  AND (? IS NULL OR t.semester = ?)
+                                  AND ftp.class_text = c.name
+                            ),
+                            0
+                        ),
+                        (
+                            SELECT COALESCE(SUM(t.quantity), 0)
+                            FROM finance_transactions t
+                            WHERE t.type = 'income'
+                              AND t.item_name = ?
+                              AND (? IS NULL OR t.school_year_id = ?)
+                              AND (? IS NULL OR t.semester = ?)
+                              AND t.class_text = c.name
+                        )
+                    ) AS paid_count
                 FROM classes c
                 LEFT JOIN departments d ON d.id = c.department_id
                 LEFT JOIN courses co ON co.id = c.course_id
                 WHERE 1
                   AND (? IS NULL OR c.department_id = ?)
                   AND (? IS NULL OR c.course_id = ?)
-                  AND c.name NOT IN (
-                      SELECT DISTINCT t.class_text
-                      FROM finance_transactions t
-                      WHERE t.type = 'income'
-                        AND t.item_name = ?
-                        AND (? IS NULL OR t.school_year_id = ?)
-                        AND (? IS NULL OR t.semester = ?)
-                        AND t.class_text IS NOT NULL
-                  )
                 ORDER BY d.name ASC, co.name DESC, c.name ASC
             ";
-            $stUnpaid = $pdo->prepare($unpaidSql);
+            $stUnpaid = $pdo->prepare($sql);
             $stUnpaid->execute([
-                $deptId, $deptId,
-                $courseId, $courseId,
                 $itemName,
                 $schoolYearId, $schoolYearId,
-                $semester, $semester
+                $semester, $semester,
+                $itemName,
+                $schoolYearId, $schoolYearId,
+                $semester, $semester,
+                $deptId, $deptId,
+                $courseId, $courseId
             ]);
             $rows = $stUnpaid->fetchAll(PDO::FETCH_ASSOC);
 
@@ -2395,16 +2466,31 @@ try {
                     '<b>STT</b>', 
                     '<b>Tên lớp</b>', 
                     '<b>Khoa / Phòng</b>', 
-                    '<b>Khóa</b>'
+                    '<b>Khóa</b>',
+                    '<b>Sĩ số</b>',
+                    '<b>Đã đóng</b>',
+                    '<b>Tỷ lệ</b>'
                 ]
             ];
 
-            foreach ($rows as $i => $r) {
+            $idx = 1;
+            foreach ($rows as $r) {
+                $tc = (int) $r['total_count'];
+                $pc = (int) $r['paid_count'];
+                if ($pc >= $tc && $tc > 0) {
+                    continue; // Bỏ qua các lớp đã đóng đủ
+                }
+                
+                $pct = $tc > 0 ? round(($pc / $tc) * 100) . '%' : '0%';
+
                 $data[] = [
-                    $i + 1,
+                    $idx++,
                     $r['class_name'],
                     $r['department_name'] ?: '--',
-                    $r['course_name'] ?: '--'
+                    $r['course_name'] ?: '--',
+                    $tc,
+                    $pc,
+                    $pct
                 ];
             }
 
@@ -2430,30 +2516,50 @@ try {
             $deptId = isset($_GET['department_id']) && $_GET['department_id'] !== '' ? (int) $_GET['department_id'] : null;
             $courseId = isset($_GET['course_id']) && $_GET['course_id'] !== '' ? (int) $_GET['course_id'] : null;
 
-            // Tìm các lớp đã đóng tiền
-            $paidSql = "
+            // Tìm các lớp đã đóng đủ tiền
+            $sql = "
                 SELECT 
                     c.name AS class_name,
                     d.name AS department_name,
                     co.name AS course_name,
-                    t.code AS voucher_code,
-                    t.amount,
-                    t.trans_date,
-                    t.payer_name
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    COALESCE(
+                        NULLIF(
+                            (
+                                SELECT COUNT(DISTINCT ftp.member_id)
+                                FROM finance_transaction_participants ftp
+                                JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                WHERE t.type = 'income'
+                                  AND t.item_name = ?
+                                  AND (? IS NULL OR t.school_year_id = ?)
+                                  AND (? IS NULL OR t.semester = ?)
+                                  AND ftp.class_text = c.name
+                            ),
+                            0
+                        ),
+                        (
+                            SELECT COALESCE(SUM(t.quantity), 0)
+                            FROM finance_transactions t
+                            WHERE t.type = 'income'
+                              AND t.item_name = ?
+                              AND (? IS NULL OR t.school_year_id = ?)
+                              AND (? IS NULL OR t.semester = ?)
+                              AND t.class_text = c.name
+                        )
+                    ) AS paid_count
                 FROM classes c
                 LEFT JOIN departments d ON d.id = c.department_id
                 LEFT JOIN courses co ON co.id = c.course_id
-                JOIN finance_transactions t ON t.class_text = c.name
-                WHERE t.type = 'income'
-                  AND t.item_name = ?
-                  AND (? IS NULL OR t.school_year_id = ?)
-                  AND (? IS NULL OR t.semester = ?)
+                WHERE 1
                   AND (? IS NULL OR c.department_id = ?)
                   AND (? IS NULL OR c.course_id = ?)
-                ORDER BY t.trans_date DESC, c.name ASC
+                ORDER BY d.name ASC, co.name DESC, c.name ASC
             ";
-            $stPaid = $pdo->prepare($paidSql);
+            $stPaid = $pdo->prepare($sql);
             $stPaid->execute([
+                $itemName,
+                $schoolYearId, $schoolYearId,
+                $semester, $semester,
                 $itemName,
                 $schoolYearId, $schoolYearId,
                 $semester, $semester,
@@ -2469,23 +2575,28 @@ try {
                     '<b>Tên lớp</b>', 
                     '<b>Khoa / Phòng</b>', 
                     '<b>Khóa</b>',
-                    '<b>Người nộp</b>',
-                    '<b>Số tiền đã đóng</b>',
-                    '<b>Số phiếu</b>',
-                    '<b>Ngày nộp</b>'
+                    '<b>Sĩ số</b>',
+                    '<b>Đã đóng</b>',
+                    '<b>Tỷ lệ</b>'
                 ]
             ];
 
-            foreach ($rows as $i => $r) {
+            $idx = 1;
+            foreach ($rows as $r) {
+                $tc = (int) $r['total_count'];
+                $pc = (int) $r['paid_count'];
+                if (!($pc >= $tc && $tc > 0)) {
+                    continue; // Bỏ qua các lớp chưa đóng đủ
+                }
+                
                 $data[] = [
-                    $i + 1,
+                    $idx++,
                     $r['class_name'],
                     $r['department_name'] ?: '--',
                     $r['course_name'] ?: '--',
-                    $r['payer_name'] ?: '--',
-                    $r['amount'],
-                    $r['voucher_code'] ?: '--',
-                    $r['trans_date'] ? date('d/m/Y', strtotime($r['trans_date'])) : '--'
+                    $tc,
+                    $pc,
+                    '100%'
                 ];
             }
 

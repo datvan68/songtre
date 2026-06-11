@@ -701,6 +701,7 @@ if ($action === 'courses') {
   $stmt = $pdo->query("
     SELECT id, name
     FROM courses
+    WHERE status = 1
     ORDER BY name
   ");
 
@@ -750,7 +751,7 @@ if ($action === 'classes') {
   $stmt = $pdo->prepare("
     SELECT id, name
     FROM classes
-    WHERE department_id=? AND course_id=?
+    WHERE department_id=? AND course_id=? AND status = 1
     ORDER BY name
   ");
   $stmt->execute([$deptId, $courseId]);
