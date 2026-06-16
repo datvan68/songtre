@@ -173,6 +173,8 @@ if ($action === 'export_violations_report') {
     require_once __DIR__ . '/../../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
 
     $excelData = [
+        ['THỐNG KÊ VI PHẠM KỶ LUẬT'],
+        [],
         ['STT', 'MSSV', 'Họ tên', 'Lớp', 'Lý do vi phạm', 'Hình thức xử lý', 'Ngày ghi nhận', 'Người ghi nhận']
     ];
 

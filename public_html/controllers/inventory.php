@@ -44,6 +44,39 @@ function clean_output_buffers()
     }
 }
 
+function get_borrow_points(PDO $pdo, $mssv)
+{
+    if (empty($mssv)) {
+        return 10;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT return_deadline, return_date, status 
+        FROM inventory_borrows 
+        WHERE borrower_name LIKE ?
+    ");
+    $stmt->execute(["$mssv%"]);
+    $borrows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $initialPoints = 10;
+    $deducted = 0;
+    $today = date('Y-m-d');
+
+    foreach ($borrows as $b) {
+        $deadline = $b['return_deadline'];
+        $actualReturn = ($b['status'] === 'returned') ? $b['return_date'] : $today;
+
+        if ($deadline && $actualReturn > $deadline) {
+            $diff = strtotime($actualReturn) - strtotime($deadline);
+            $days = floor($diff / (60 * 60 * 24));
+            if ($days > 7) {
+                $deducted += floor(($days - 1) / 7);
+            }
+        }
+    }
+    return max(0, $initialPoints - $deducted);
+}
+
 /* =========================
    MEMBER SEARCH (AUTOCOMPLETE MSSV)
 ========================= */
@@ -72,9 +105,14 @@ if ($action === 'member_search') {
 
     $like = "%$q%";
     $stmt->execute([$like, $like]);
+    $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($members as &$m) {
+        $m['borrow_points'] = get_borrow_points($pdo, $m['mssv']);
+    }
 
     json_ok([
-        'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)
+        'data' => $members
     ]);
 }
 
@@ -223,6 +261,7 @@ if ($action === 'history') {
 
     $q = trim($_GET['q'] ?? '');
     $status = $_GET['status'] ?? '';
+    $inventoryId = (int) ($_GET['inventory_id'] ?? 0);
 
     $page = max(1, (int) ($_GET['page'] ?? 1));
     $perPage = max(1, (int) ($_GET['per_page'] ?? 10));
@@ -230,6 +269,12 @@ if ($action === 'history') {
 
     $where = "WHERE 1";
     $params = [];
+
+    // Lọc theo inventory_id nếu có
+    if ($inventoryId > 0) {
+        $where .= " AND b.inventory_id = ?";
+        $params[] = $inventoryId;
+    }
 
     // 🔍 SEARCH
     if ($q !== '') {
@@ -264,12 +309,19 @@ if ($action === 'history') {
     $stmtTotal->execute($params);
     $total = (int) $stmtTotal->fetchColumn();
 
+    // LIMIT SQL
+    $limitSql = "";
+    if ($inventoryId <= 0) {
+        $limitSql = "LIMIT $perPage OFFSET $offset";
+    }
+
     // DATA
     $stmt = $pdo->prepare("
     SELECT
       b.*,
       i.code,
       i.name,
+      m.mssv,
 
       -- lấy lớp từ đoàn viên
       c.name AS class_name
@@ -288,13 +340,18 @@ if ($action === 'history') {
     ORDER BY
       (b.status='borrowing' AND b.return_deadline < CURDATE()) DESC,
       b.borrow_date DESC
-    LIMIT $perPage OFFSET $offset
+    $limitSql
 ");
 
     $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$r) {
+        $r['borrow_points'] = !empty($r['mssv']) ? get_borrow_points($pdo, $r['mssv']) : null;
+    }
 
     json_ok([
-        'rows' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+        'rows' => $rows,
         'total' => $total
     ]);
 }
@@ -763,6 +820,8 @@ if ($action === 'export_inventory') {
     require_once __DIR__ . '/../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
     
     $excelData = [
+        ['DANH SÁCH THIẾT BỊ VÀ ĐỒ DÙNG'],
+        [],
         ['STT', 'Mã thiết bị', 'Tên thiết bị', 'Loại', 'Danh mục', 'Tổng số lượng', 'Đang mượn', 'Sẵn có', 'Trạng thái', 'Ghi chú']
     ];
 
@@ -851,6 +910,8 @@ if ($action === 'export_history') {
     require_once __DIR__ . '/../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
 
     $excelData = [
+        ['LỊCH SỬ MƯỢN TRẢ THIẾT BỊ'],
+        [],
         ['STT', 'Mã thiết bị', 'Tên thiết bị', 'Người mượn', 'Lớp / Đơn vị', 'Số lượng mượn', 'Ngày mượn', 'Hạn trả', 'Ngày trả', 'Trạng thái']
     ];
 
@@ -905,6 +966,8 @@ if ($action === 'export_category') {
     require_once __DIR__ . '/../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
 
     $excelData = [
+        ['DANH MỤC THIẾT BỊ'],
+        [],
         ['STT', 'Tên danh mục', 'Số lượng thiết bị liên kết']
     ];
 

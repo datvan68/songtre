@@ -338,6 +338,7 @@ async function openItemHistory(inventoryId) {
               <th class="px-4 py-2 text-left">STT</th>
               <th class="px-4 py-2 text-left">Người mượn</th>
               <th class="px-4 py-2 text-left">Lớp</th>
+              <th class="px-4 py-2 text-center">Uy tín</th>
               <th class="px-4 py-2 text-center">SL</th>
               <th class="px-4 py-2 text-center">Ngày mượn</th>
               <th class="px-4 py-2 text-center">Hạn trả</th>
@@ -348,12 +349,19 @@ async function openItemHistory(inventoryId) {
           <tbody>
             ${rows.length === 0
       ? `<tr>
-                         <td colspan="8" class="py-6 text-center text-gray-500">
+                         <td colspan="9" class="py-6 text-center text-gray-500">
                            Chưa có lịch sử mượn – trả
                          </td>
                        </tr>`
       : rows.map((r, i) => {
         const overdue = r.status === "borrowing" && isOverdue(r.return_deadline);
+        let ptsHtml = "-";
+        if (r.borrow_points !== null) {
+          let ptsColor = "text-green-600";
+          if (r.borrow_points < 5) ptsColor = "text-red-600 font-bold";
+          else if (r.borrow_points < 8) ptsColor = "text-orange-500 font-semibold";
+          ptsHtml = `<span class="${ptsColor}">${r.borrow_points} đ</span>`;
+        }
         return `
                           <tr class="border-t ${overdue ? "bg-red-50" : ""}">
                             <td class="px-4 py-2">${i + 1}</td>
@@ -365,6 +373,7 @@ async function openItemHistory(inventoryId) {
 </td>                            <td class="px-4 py-2">
                               ${r.class_name || r.borrower_unit || "-"}
                             </td>                            
+                            <td class="px-4 py-2 text-center">${ptsHtml}</td>
                             <td class="px-4 py-2 text-center">${r.quantity}</td>
                             <td class="px-4 py-2 text-center">${r.borrow_date}</td>
                             <td class="px-4 py-2 text-center">${r.return_deadline ?? "-"}</td>
@@ -429,6 +438,16 @@ async function loadHistory(page = historyPage) {
       }
 </td>            <td class="px-4 py-2">
               ${r.class_name || r.borrower_unit || "-"}
+            </td>
+            <td class="px-4 py-2 text-center">
+              ${r.borrow_points !== null ? (
+                r.borrow_points < 5 
+                ? `<span class="text-red-600 font-bold">${r.borrow_points} đ</span>`
+                : (r.borrow_points < 8 
+                  ? `<span class="text-orange-500 font-semibold">${r.borrow_points} đ</span>`
+                  : `<span class="text-green-600 font-semibold">${r.borrow_points} đ</span>`
+                )
+              ) : "-"}
             </td>
             <td class="px-4 py-2 text-center">${r.quantity}</td>
             <td class="px-4 py-2 text-center">${r.borrow_date}</td>
@@ -716,16 +735,26 @@ function bindBorrowerAutocomplete() {
       const j = await res.json();
       if (!j.ok || j.data.length === 0) return;
 
-      suggest.innerHTML = j.data.map(m => `
-        <div
-          class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
-          data-mssv="${m.mssv}"
-          data-name="${m.fullname}"
-          data-class="${m.class_name ?? ''}">
-          <strong>${m.mssv}</strong> – ${m.fullname}
-          <div class="text-xs text-gray-500">${m.class_name ?? ''}</div>
-        </div>
-      `).join("");
+      suggest.innerHTML = j.data.map(m => {
+        let colorClass = "text-green-600 font-semibold";
+        if (m.borrow_points < 5) {
+          colorClass = "text-red-600 font-bold";
+        } else if (m.borrow_points < 8) {
+          colorClass = "text-orange-500 font-semibold";
+        }
+        return `
+          <div
+            class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+            data-mssv="${m.mssv}"
+            data-name="${m.fullname}"
+            data-class="${m.class_name ?? ''}"
+            data-points="${m.borrow_points}">
+            <strong>${m.mssv}</strong> – ${m.fullname}
+            <span class="text-xs ${colorClass} ml-2">(Uy tín: ${m.borrow_points} đ)</span>
+            <div class="text-xs text-gray-500">${m.class_name ?? ''}</div>
+          </div>
+        `;
+      }).join("");
 
       suggest.classList.remove("hidden");
     }, 300);
@@ -737,6 +766,12 @@ function bindBorrowerAutocomplete() {
 
     input.value = item.dataset.mssv + " – " + item.dataset.name;
     classInput.value = item.dataset.class;
+
+    const pts = parseInt(item.dataset.points) || 10;
+    if (pts < 8) {
+      toast(`Cảnh báo: Thành viên có điểm uy tín thấp (${pts} điểm)!`, "error");
+    }
+
     suggest.classList.add("hidden");
   });
 

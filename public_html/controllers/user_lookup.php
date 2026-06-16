@@ -108,6 +108,38 @@ function pickDisplayName($row)
         return $uFull;
     return $uname;
 }
+function get_borrow_points(PDO $pdo, $mssv)
+{
+    if (empty($mssv)) {
+        return 10;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT return_deadline, return_date, status 
+        FROM inventory_borrows 
+        WHERE borrower_name LIKE ?
+    ");
+    $stmt->execute(["$mssv%"]);
+    $borrows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $initialPoints = 10;
+    $deducted = 0;
+    $today = date('Y-m-d');
+
+    foreach ($borrows as $b) {
+        $deadline = $b['return_deadline'];
+        $actualReturn = ($b['status'] === 'returned') ? $b['return_date'] : $today;
+
+        if ($deadline && $actualReturn > $deadline) {
+            $diff = strtotime($actualReturn) - strtotime($deadline);
+            $days = floor($diff / (60 * 60 * 24));
+            if ($days > 7) {
+                $deducted += floor(($days - 1) / 7);
+            }
+        }
+    }
+    return max(0, $initialPoints - $deducted);
+}
 function can_view_achievements_any(): bool
 {
     // reviewer xem được tất cả
@@ -548,26 +580,32 @@ try {
             $finance = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             /* ===== 9) INVENTORY BORROWS ===== */
-            $stmt = $pdo->prepare("
-        SELECT
-          b.id,
-          i.name AS item_name,
-          b.borrower_name,
-          b.quantity,
-          b.borrow_date,
-          b.return_deadline,
-          b.return_date,
-          b.status,
-          b.purpose,
-          b.note
-        FROM inventory_borrows b
-        JOIN inventory_items i ON i.id = b.inventory_id
-        WHERE b.created_by = ?
-        ORDER BY b.borrow_date DESC, b.id DESC
-        LIMIT 20
-    ");
-            $stmt->execute([$uid]);
-            $borrows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $borrows = [];
+            $borrowPoints = 10;
+            $mssv = trim((string) ($user['mssv'] ?? ''));
+            if ($mssv !== '') {
+                $borrowPoints = get_borrow_points($pdo, $mssv);
+                $stmt = $pdo->prepare("
+                    SELECT
+                      b.id,
+                      i.name AS item_name,
+                      b.borrower_name,
+                      b.quantity,
+                      b.borrow_date,
+                      b.return_deadline,
+                      b.return_date,
+                      b.status,
+                      b.purpose,
+                      b.note
+                    FROM inventory_borrows b
+                    JOIN inventory_items i ON i.id = b.inventory_id
+                    WHERE b.borrower_name LIKE ?
+                    ORDER BY b.borrow_date DESC, b.id DESC
+                    LIMIT 20
+                ");
+                $stmt->execute([$mssv . '%']);
+                $borrows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
 
             $financePaidRows = [];
             $financePaidStats = []; // không cần total_count nữa
@@ -725,22 +763,26 @@ try {
             if (!$canViolationsView && !$isSelf) {
                 $violationsForbidden = true;
             } else if ($memberIdLookup > 0) {
-                $stmt = $pdo->prepare("
-                    SELECT
-                        v.id,
-                        v.reason,
-                        v.treatment,
-                        v.created_at,
-                        COALESCE(m.fullname, uc.fullname, uc.username) AS creator_name
-                    FROM violations v
-                    LEFT JOIN users uc ON uc.id = v.created_by
-                    LEFT JOIN members m ON m.user_id = uc.id
-                    WHERE v.member_id = ?
-                    ORDER BY v.created_at DESC
-                    LIMIT 50
-                ");
-                $stmt->execute([$memberIdLookup]);
-                $violations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                try {
+                    $stmt = $pdo->prepare("
+                        SELECT
+                            v.id,
+                            v.reason,
+                            v.treatment,
+                            v.created_at,
+                            COALESCE(m.fullname, uc.fullname, uc.username) AS creator_name
+                        FROM violations v
+                        LEFT JOIN users uc ON uc.id = v.created_by
+                        LEFT JOIN members m ON m.user_id = uc.id
+                        WHERE v.member_id = ?
+                        ORDER BY v.created_at DESC
+                        LIMIT 50
+                    ");
+                    $stmt->execute([$memberIdLookup]);
+                    $violations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } catch (Throwable $e) {
+                    $violations = [];
+                }
             }
 
             /* ===== 13) FINANCE USER DETAILS (Đã đóng và Chưa đóng) ===== */
@@ -863,6 +905,7 @@ try {
                 'nominations' => $nominations,
                 'finance' => $finance,
                 'borrows' => $borrows,
+                'borrow_points' => $borrowPoints,
 
                 'review_years' => $reviewYears,
                 'reviews' => $reviews,

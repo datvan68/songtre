@@ -137,6 +137,22 @@ try {
       // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
   }
 
+  // Tự động tạo bảng violations nếu chưa tồn tại
+  try {
+      $pdo->exec("
+          CREATE TABLE IF NOT EXISTS violations (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              member_id INT NOT NULL,
+              reason TEXT NOT NULL,
+              treatment VARCHAR(255) NOT NULL,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              created_by INT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      ");
+  } catch (Throwable $dbErr) {
+      // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
+  }
+
   // Tự động thêm cột status vào bảng courses và classes nếu chưa có
   try {
       $checkCourse = $pdo->query("SHOW COLUMNS FROM `courses` LIKE 'status'")->fetch();

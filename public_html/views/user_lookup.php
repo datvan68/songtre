@@ -98,17 +98,17 @@ $isSelfOnly = (!$canAll && !$isScopedRole);
 
                     </div>
 
-                    <div class="mt-4 rounded-2xl border border-gray-100 p-4">
+                    <div id="container-summary" class="mt-4 rounded-2xl border border-gray-100 p-4 hidden">
                         <div class="font-semibold mb-2">Tóm tắt nhanh</div>
-                        <div id="ul-summary" class="text-sm text-gray-600">
-                            Chưa chọn user nào.
-                        </div>
+                        <div id="ul-summary" class="text-sm text-gray-600"></div>
                     </div>
-                    <div class="mt-4 rounded-2xl border border-gray-100 p-4">
+                    <div id="container-paid" class="mt-4 rounded-2xl border border-gray-100 p-4 hidden">
                         <div class="font-semibold mb-2">Tiền đã đóng</div>
-                        <div id="ul-paid" class="text-sm text-gray-600">
-                            Chưa chọn user nào.
-                        </div>
+                        <div id="ul-paid" class="text-sm text-gray-600"></div>
+                    </div>
+                    <div id="container-sidebar-inventory" class="mt-4 rounded-2xl border border-gray-100 p-4 hidden">
+                        <div class="font-semibold mb-2">Thiết bị</div>
+                        <div id="ul-sidebar-inventory" class="text-sm text-gray-600"></div>
                     </div>
 
                 </div>

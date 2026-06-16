@@ -3159,21 +3159,32 @@
                 <div class="font-bold text-gray-900 text-base leading-snug">${escapeHtml(className)}</div>
                 <div class="text-xs text-gray-600 mt-0.5 font-medium">Khoản thu: ${escapeHtml(itemName)}</div>
               </div>
+              <div>
+                <button id="btnModalClassMembersExport" class="px-3 py-1.5 border rounded-lg bg-white hover:bg-gray-50 text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                  <svg class="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 3v12" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M8 11l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M5 21h14" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  Xuất Excel
+                </button>
+              </div>
             </div>
 
-            <div class="border rounded-xl overflow-hidden max-h-[300px] overflow-y-auto">
+            <div class="border rounded-xl overflow-hidden max-h-[450px] overflow-y-auto">
               <table class="w-full text-sm">
                 <thead class="bg-gray-50 border-b">
                   <tr class="text-left text-xs font-semibold text-gray-600 uppercase">
                     <th class="px-4 py-2 w-[60px] text-center">STT</th>
                     <th class="px-4 py-2 w-[120px]">MSSV</th>
                     <th class="px-4 py-2">Họ và tên</th>
+                    <th class="px-4 py-2 w-[120px]">Đối tượng</th>
                     <th class="px-4 py-2 text-center w-[120px]">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y">
                   ${members.length === 0 
-                    ? `<tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Lớp này chưa có sinh viên nào.</td></tr>`
+                    ? `<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Lớp này chưa có sinh viên nào.</td></tr>`
                     : members.map((m, idx) => {
                         const badge = m.has_paid > 0 
                           ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Đã đóng</span>`
@@ -3183,6 +3194,7 @@
                             <td class="px-4 py-2 text-center text-gray-500">${idx + 1}</td>
                             <td class="px-4 py-2 font-mono text-xs">${escapeHtml(m.mssv || "--")}</td>
                             <td class="px-4 py-2 font-medium">${escapeHtml(m.fullname)}</td>
+                            <td class="px-4 py-2 text-gray-700">${escapeHtml(m.member_type || "Khác")}</td>
                             <td class="px-4 py-2 text-center">${badge}</td>
                           </tr>
                         `;
@@ -3200,13 +3212,27 @@
           </div>
         `;
 
-        modal(mHtml, "Chi tiết thành viên đóng tiền", "medium");
+        modal(mHtml, "Chi tiết thành viên đóng tiền", "large");
 
         const mRoot = document.getElementById("classMembersModalRoot");
         if (mRoot) {
           mRoot.querySelector("#btnBackToUnpaid").onclick = () => {
             openUnpaidClassesModal(row); // Mở lại popup thống kê lớp
           };
+          const btnExport = mRoot.querySelector("#btnModalClassMembersExport");
+          if (btnExport) {
+            btnExport.onclick = () => {
+              const params = new URLSearchParams({
+                action: "export_class_member_payments",
+                class_id: classId,
+                item_name: itemName,
+                school_year_id: schoolYearId,
+                semester: semester
+              });
+              const url = API + "?" + params.toString();
+              window.open(url, "_blank");
+            };
+          }
         }
       } catch (e) {
         toast(e.message);

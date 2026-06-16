@@ -66,6 +66,8 @@ $rows = $stm->fetchAll(PDO::FETCH_ASSOC);
 
 // Header file
 $data = [
+    ['DANH SÁCH ĐIỂM DANH PHONG TRÀO: ' . mb_strtoupper($campaignTitle, 'UTF-8')],
+    [],
     ['Tên', 'Lớp', 'Thời gian', 'Buổi']
 ];
 

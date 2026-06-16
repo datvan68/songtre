@@ -175,7 +175,7 @@
 
       <!-- TABLE SCROLL -->
       <div class="overflow-x-auto">
-        <table class="w-full min-w-[1600px]">
+        <table class="w-full min-w-[1700px]">
           <thead class="bg-gray-50 border-b">
             <tr>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">STT</th>
@@ -183,6 +183,7 @@
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Tên</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Người mượn</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Lớp</th>
+              <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase text-center">Uy tín</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase text-center">SL</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase text-center">Ngày mượn</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-600 uppercase text-center">Hạn trả</th>

@@ -166,6 +166,8 @@ if ($action === 'export_finance_report') {
     require_once __DIR__ . '/../../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
 
     $excelData = [
+        ['THỐNG KÊ THU CHI TÀI CHÍNH'],
+        [],
         ['STT', 'Mã phiếu', 'Tên khoản thu/chi', 'Loại', 'Số tiền', 'Ngày giao dịch', 'Người nộp/nhận', 'Học kỳ', 'Người lập phiếu', 'Mô tả']
     ];
 
@@ -462,6 +464,8 @@ if ($action === 'export_unpaid_members') {
     require_once __DIR__ . '/../../vendor/shuchkin/simplexlsxgen/src/SimpleXLSXGen.php';
 
     $excelData = [
+        ['DANH SÁCH CHƯA ĐÓNG TIỀN - ' . mb_strtoupper($itemName, 'UTF-8')],
+        [],
         ['STT', 'Họ và tên', 'MSSV', 'Lớp', 'Khoa / Phòng', 'Khóa', 'Phân loại']
     ];
 

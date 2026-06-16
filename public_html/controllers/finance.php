@@ -2112,6 +2112,27 @@ try {
             $deptId = isset($input['department_id']) && $input['department_id'] !== '' ? (int) $input['department_id'] : null;
             $courseId = isset($input['course_id']) && $input['course_id'] !== '' ? (int) $input['course_id'] : null;
 
+            $targetType = 'tat_ca';
+            $stItem = $pdo->prepare("SELECT COALESCE(target_type, 'tat_ca') FROM finance_items WHERE name = ? AND type = 'income' LIMIT 1");
+            $stItem->execute([$itemName]);
+            $itemTarget = $stItem->fetchColumn();
+            if ($itemTarget) {
+                $targetType = $itemTarget;
+            }
+
+            $totalCountCond = "";
+            $paidCountJoin = "";
+            $paidCountCond = "";
+            if ($targetType === 'doan_vien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
             // Truy vấn lấy sĩ số lớp và số sinh viên đã đóng tiền cho khoản thu tương ứng
             $sql = "
                 SELECT 
@@ -2119,18 +2140,20 @@ try {
                     c.name AS class_name,
                     d.name AS department_name,
                     co.name AS course_name,
-                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id $totalCountCond) AS total_count,
                     COALESCE(
                         NULLIF(
                             (
                                 SELECT COUNT(DISTINCT ftp.member_id)
                                 FROM finance_transaction_participants ftp
                                 JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                $paidCountJoin
                                 WHERE t.type = 'income'
                                   AND t.item_name = ?
                                   AND (? IS NULL OR t.school_year_id = ?)
                                   AND (? IS NULL OR t.semester = ?)
                                   AND ftp.class_text = c.name
+                                  $paidCountCond
                             ),
                             0
                         ),
@@ -2203,12 +2226,32 @@ try {
             $schoolYearId = isset($input['school_year_id']) && $input['school_year_id'] !== '' ? (int) $input['school_year_id'] : null;
             $semester = validate_semester_or_null($pdo, $input['semester'] ?? null);
 
+            $targetType = 'tat_ca';
+            $stItem = $pdo->prepare("SELECT COALESCE(target_type, 'tat_ca') FROM finance_items WHERE name = ? AND type = 'income' LIMIT 1");
+            $stItem->execute([$itemName]);
+            $itemTarget = $stItem->fetchColumn();
+            if ($itemTarget) {
+                $targetType = $itemTarget;
+            }
+
+            $whereCond = "";
+            if ($targetType === 'doan_vien') {
+                $whereCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $whereCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
             // Lấy danh sách thành viên của lớp và trạng thái đóng tiền của họ
             $sql = "
                 SELECT 
                     m.id AS member_id,
                     COALESCE(NULLIF(m.fullname, ''), m.mssv) AS fullname,
                     m.mssv,
+                    CASE 
+                        WHEN LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan') THEN 'Đoàn viên'
+                        WHEN LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh') THEN 'Thanh niên'
+                        ELSE 'Khác'
+                    END AS member_type,
                     (
                         SELECT COUNT(1)
                         FROM finance_transaction_participants ftp
@@ -2221,6 +2264,7 @@ try {
                     ) AS has_paid
                 FROM members m
                 WHERE m.class_id = ?
+                  $whereCond
                 ORDER BY m.fullname ASC, m.mssv ASC
             ";
 
@@ -2235,6 +2279,111 @@ try {
 
             json_ok($members);
             break;
+        }
+
+        case 'export_class_member_payments': {
+            require_can('finance', 'view');
+
+            $classId = isset($_GET['class_id']) ? (int) $_GET['class_id'] : 0;
+            $itemName = trim((string) ($_GET['item_name'] ?? ''));
+            if ($classId <= 0 || $itemName === '') {
+                json_err('Thiếu thông tin lớp hoặc khoản thu');
+            }
+
+            $schoolYearId = isset($_GET['school_year_id']) && $_GET['school_year_id'] !== '' ? (int) $_GET['school_year_id'] : null;
+            $semester = validate_semester_or_null($pdo, $_GET['semester'] ?? null);
+
+            // Lấy tên lớp
+            $stClass = $pdo->prepare("SELECT name FROM classes WHERE id = ? LIMIT 1");
+            $stClass->execute([$classId]);
+            $className = (string) $stClass->fetchColumn();
+            if ($className === '') {
+                $className = "Lop_" . $classId;
+            }
+
+            $targetType = 'tat_ca';
+            $stItem = $pdo->prepare("SELECT COALESCE(target_type, 'tat_ca') FROM finance_items WHERE name = ? AND type = 'income' LIMIT 1");
+            $stItem->execute([$itemName]);
+            $itemTarget = $stItem->fetchColumn();
+            if ($itemTarget) {
+                $targetType = $itemTarget;
+            }
+
+            $whereCond = "";
+            if ($targetType === 'doan_vien') {
+                $whereCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $whereCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
+            // Lấy danh sách thành viên của lớp và trạng thái đóng tiền của họ
+            $sql = "
+                SELECT 
+                    COALESCE(NULLIF(m.fullname, ''), m.mssv) AS fullname,
+                    m.mssv,
+                    CASE 
+                        WHEN LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan') THEN 'Đoàn viên'
+                        WHEN LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh') THEN 'Thanh niên'
+                        ELSE 'Khác'
+                    END AS member_type,
+                    (
+                        SELECT COUNT(1)
+                        FROM finance_transaction_participants ftp
+                        JOIN finance_transactions t ON t.id = ftp.transaction_id
+                        WHERE t.type = 'income'
+                          AND t.item_name = ?
+                          AND (? IS NULL OR t.school_year_id = ?)
+                          AND (? IS NULL OR t.semester = ?)
+                          AND ftp.member_id = m.id
+                    ) AS has_paid
+                FROM members m
+                WHERE m.class_id = ?
+                  $whereCond
+                ORDER BY m.fullname ASC, m.mssv ASC
+            ";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $itemName,
+                $schoolYearId, $schoolYearId,
+                $semester, $semester,
+                $classId
+            ]);
+            $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Tạo cấu trúc data cho Excel
+            $data = [
+                ['CHI TIẾT ĐÓNG TIỀN LỚP ' . mb_strtoupper($className, 'UTF-8')],
+                ['KHOẢN THU: ' . mb_strtoupper($itemName, 'UTF-8')],
+                [],
+                [
+                    '<b>STT</b>', 
+                    '<b>MSSV</b>', 
+                    '<b>Họ và tên</b>', 
+                    '<b>Đối tượng</b>',
+                    '<b>Trạng thái</b>'
+                ]
+            ];
+
+            $idx = 1;
+            foreach ($members as $m) {
+                $statusText = $m['has_paid'] > 0 ? 'Đã đóng' : 'Chưa đóng';
+                $data[] = [
+                    $idx++,
+                    $m['mssv'] ?: '--',
+                    $m['fullname'],
+                    $m['member_type'],
+                    $statusText
+                ];
+            }
+
+            clean_output_buffers();
+            
+            $filename = "Chi_Tiet_Dong_Tien_" . preg_replace('/[^a-zA-Z0-9]/', '_', $className) . "_" . preg_replace('/[^a-zA-Z0-9]/', '_', $itemName) . ".xlsx";
+            
+            $xlsx = SimpleXLSXGen::fromArray($data);
+            $xlsx->downloadAs($filename);
+            exit;
         }
 
         case 'export_transactions': {
@@ -2332,6 +2481,8 @@ try {
 
             // Tạo cấu trúc dữ liệu cho Excel
             $data = [
+                ['DANH SÁCH GIAO DỊCH THU CHI TÀI CHÍNH'],
+                [],
                 [
                     '<b>STT</b>',
                     '<b>Số phiếu</b>',
@@ -2408,24 +2559,47 @@ try {
             $deptId = isset($_GET['department_id']) && $_GET['department_id'] !== '' ? (int) $_GET['department_id'] : null;
             $courseId = isset($_GET['course_id']) && $_GET['course_id'] !== '' ? (int) $_GET['course_id'] : null;
 
+            $targetType = 'tat_ca';
+            $stItem = $pdo->prepare("SELECT COALESCE(target_type, 'tat_ca') FROM finance_items WHERE name = ? AND type = 'income' LIMIT 1");
+            $stItem->execute([$itemName]);
+            $itemTarget = $stItem->fetchColumn();
+            if ($itemTarget) {
+                $targetType = $itemTarget;
+            }
+
+            $totalCountCond = "";
+            $paidCountJoin = "";
+            $paidCountCond = "";
+            if ($targetType === 'doan_vien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
             // Tìm các lớp chưa đóng đủ tiền
             $sql = "
                 SELECT 
                     c.name AS class_name,
                     d.name AS department_name,
                     co.name AS course_name,
-                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id $totalCountCond) AS total_count,
                     COALESCE(
                         NULLIF(
                             (
                                 SELECT COUNT(DISTINCT ftp.member_id)
                                 FROM finance_transaction_participants ftp
                                 JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                $paidCountJoin
                                 WHERE t.type = 'income'
                                   AND t.item_name = ?
                                   AND (? IS NULL OR t.school_year_id = ?)
                                   AND (? IS NULL OR t.semester = ?)
                                   AND ftp.class_text = c.name
+                                  $paidCountCond
                             ),
                             0
                         ),
@@ -2462,6 +2636,8 @@ try {
 
             // Tạo cấu trúc data cho Excel
             $data = [
+                ['DANH SÁCH CÁC LỚP CHƯA ĐÓNG ĐỦ KHOẢN THU: ' . mb_strtoupper($itemName, 'UTF-8')],
+                [],
                 [
                     '<b>STT</b>', 
                     '<b>Tên lớp</b>', 
@@ -2516,24 +2692,47 @@ try {
             $deptId = isset($_GET['department_id']) && $_GET['department_id'] !== '' ? (int) $_GET['department_id'] : null;
             $courseId = isset($_GET['course_id']) && $_GET['course_id'] !== '' ? (int) $_GET['course_id'] : null;
 
+            $targetType = 'tat_ca';
+            $stItem = $pdo->prepare("SELECT COALESCE(target_type, 'tat_ca') FROM finance_items WHERE name = ? AND type = 'income' LIMIT 1");
+            $stItem->execute([$itemName]);
+            $itemTarget = $stItem->fetchColumn();
+            if ($itemTarget) {
+                $targetType = $itemTarget;
+            }
+
+            $totalCountCond = "";
+            $paidCountJoin = "";
+            $paidCountCond = "";
+            if ($targetType === 'doan_vien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";
+            } elseif ($targetType === 'thanh_nien') {
+                $totalCountCond = " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+                $paidCountJoin = " JOIN members m2 ON m2.id = ftp.member_id ";
+                $paidCountCond = " AND LOWER(CAST(m2.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
+            }
+
             // Tìm các lớp đã đóng đủ tiền
             $sql = "
                 SELECT 
                     c.name AS class_name,
                     d.name AS department_name,
                     co.name AS course_name,
-                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id) AS total_count,
+                    (SELECT COUNT(*) FROM members m WHERE m.class_id = c.id $totalCountCond) AS total_count,
                     COALESCE(
                         NULLIF(
                             (
                                 SELECT COUNT(DISTINCT ftp.member_id)
                                 FROM finance_transaction_participants ftp
                                 JOIN finance_transactions t ON t.id = ftp.transaction_id
+                                $paidCountJoin
                                 WHERE t.type = 'income'
                                   AND t.item_name = ?
                                   AND (? IS NULL OR t.school_year_id = ?)
                                   AND (? IS NULL OR t.semester = ?)
                                   AND ftp.class_text = c.name
+                                  $paidCountCond
                             ),
                             0
                         ),
@@ -2570,6 +2769,8 @@ try {
 
             // Tạo cấu trúc data cho Excel
             $data = [
+                ['DANH SÁCH CÁC LỚP ĐÃ ĐÓNG ĐỦ KHOẢN THU: ' . mb_strtoupper($itemName, 'UTF-8')],
+                [],
                 [
                     '<b>STT</b>', 
                     '<b>Tên lớp</b>', 
@@ -2671,6 +2872,8 @@ try {
 
             // Tạo cấu trúc dữ liệu cho file Excel
             $data = [
+                ['TỔNG HỢP CÁC LỚP CHƯA ĐÓNG TIỀN CÁC KHOẢN THU'],
+                [],
                 [
                     '<b>STT</b>', 
                     '<b>Khoản thu chưa đóng</b>',

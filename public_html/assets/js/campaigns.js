@@ -1417,8 +1417,10 @@ function openCampaignModal(id = null) {
 
       <div>
         <label class="block text-sm">Điểm số</label>
-        <input name="score" type="number" value="0"
-          class="w-full px-3 py-2 border rounded-lg">
+        <select name="score" class="w-full px-3 py-2 border rounded-lg">
+          <option value="5">5 điểm</option>
+          <option value="10">10 điểm</option>
+        </select>
       </div>
 
       <div class="md:col-span-2">

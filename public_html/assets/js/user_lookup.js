@@ -17,6 +17,10 @@
   const $btnClear = document.getElementById("ul-btn-clear");
 
   const $paid = document.getElementById("ul-paid");
+  const $sidebarInventory = document.getElementById("ul-sidebar-inventory");
+  const $containerSummary = document.getElementById("container-summary");
+  const $containerPaid = document.getElementById("container-paid");
+  const $containerSidebarInventory = document.getElementById("container-sidebar-inventory");
 
   let SEARCH_TIMER = null;
   let CURRENT_USER_ID = null;
@@ -40,6 +44,13 @@
   function isBCHUser() {
     const role = String(CURRENT_DATA?.user?.role_name || "").toLowerCase();
     return role === "banchaphanh";
+  }
+
+  function toggleContainers(show) {
+    const action = show ? "remove" : "add";
+    $containerSummary?.classList[action]("hidden");
+    $containerPaid?.classList[action]("hidden");
+    $containerSidebarInventory?.classList[action]("hidden");
   }
 
   /* =========================
@@ -329,6 +340,73 @@
     }).join("")}
     </div>
   `;
+  }
+
+  function renderSidebarInventory(data) {
+    if (!$sidebarInventory) return;
+
+    if (!CURRENT_USER_ID) {
+      $sidebarInventory.innerHTML = "Chưa chọn user nào.";
+      return;
+    }
+
+    const borrows = data.borrows || [];
+    const borrowPoints = data.borrow_points !== undefined ? data.borrow_points : 10;
+
+    let pointsHtml = `
+      <div class="mb-3 p-3 rounded-xl border border-blue-100 bg-blue-50/50 flex items-center justify-between">
+        <span class="text-xs text-gray-500 font-medium">Điểm uy tín mượn trả:</span>
+        <span class="text-sm font-bold text-blue-700">${esc(borrowPoints)} / 10 điểm</span>
+      </div>
+    `;
+
+    if (!borrows.length) {
+      $sidebarInventory.innerHTML = pointsHtml + `<div class="text-gray-500 text-xs py-1">Chưa có dữ liệu mượn trả thiết bị.</div>`;
+      return;
+    }
+
+    const itemsHtml = borrows.map((r) => {
+      const itemName = r.item_name || "Thiết bị không tên";
+      const qty = r.quantity || 1;
+      const statusKey = keyLower(r.status);
+      const borrowDate = fmtDate(r.borrow_date);
+      
+      let badgeColor = "bg-gray-100 text-gray-700";
+      let statusLabel = r.status || "Chưa rõ";
+      if (statusKey === "borrowing") {
+        badgeColor = "bg-amber-100 text-amber-700";
+        statusLabel = "Đang mượn";
+      } else if (statusKey === "returned") {
+        badgeColor = "bg-green-100 text-green-700";
+        statusLabel = "Đã trả";
+      } else if (statusKey === "overdue") {
+        badgeColor = "bg-red-100 text-red-700";
+        statusLabel = "Quá hạn";
+      }
+
+      return `
+        <div class="rounded-xl border border-gray-100 bg-white p-3 space-y-1">
+          <div class="flex items-start justify-between gap-2">
+            <div class="font-medium text-gray-900 truncate text-xs w-[60%]" title="${esc(itemName)}">
+              ${esc(itemName)}
+            </div>
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeColor} shrink-0">
+              ${esc(statusLabel)}
+            </span>
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-gray-500">
+            <span>SL: ${esc(qty)}</span>
+            <span>Mượn: ${esc(borrowDate)}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    $sidebarInventory.innerHTML = pointsHtml + `
+      <div class="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+        ${itemsHtml}
+      </div>
+    `;
   }
 
   function renderReviews(data) {
@@ -1200,10 +1278,13 @@ ${isBCH
 
       renderSummary(data);
       renderPaid(data);
+      renderSidebarInventory(data);
+      toggleContainers(true);
       renderActiveTab();
 
     } catch (e) {
       CURRENT_DATA = null;
+      toggleContainers(false);
       $summary.innerHTML = `Load lỗi: ${esc(e.message || "Unknown")}`;
       $detail.innerHTML = `<div class="text-red-600">${esc(e.message || "Không load được user")}</div>`;
     }
@@ -1227,7 +1308,9 @@ ${isBCH
     renderTabs();
     hideDropdown();
     if ($q) $q.value = "";
+    toggleContainers(false);
     if ($paid) $paid.innerHTML = "Chưa chọn user nào.";
+    if ($sidebarInventory) $sidebarInventory.innerHTML = "Chưa chọn user nào.";
     $summary.innerHTML = "Chưa chọn user nào.";
     $detail.innerHTML = `Chọn 1 user ở bên trái để hiển thị thông tin.`;
   }
