@@ -2258,6 +2258,16 @@
     const qEl = mroot.querySelector("#partQ");
     const cEl = mroot.querySelector("#partCount");
 
+    // Hiển thị loading spinner đẹp mắt trong lúc chờ tải dữ liệu
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" class="px-3 py-8 text-center text-gray-500">
+          <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2 align-middle"></div>
+          <span class="align-middle">Đang tải danh sách thành viên...</span>
+        </td>
+      </tr>
+    `;
+
     const fItem = root.querySelector("#fItem");
     let targetType = "tat_ca";
     if (fItem && fItem.tagName === "SELECT" && fItem.selectedIndex >= 0) {
@@ -2343,11 +2353,19 @@
     });
 
     mroot.querySelector("#partAll").onclick = () => {
-      ALL.forEach(x => selected.add(x.id));
+      const q = qEl.value.trim();
+      const listToSelect = q ? ALL.filter(x => x.norm.includes(normText(q))) : ALL;
+      listToSelect.forEach(x => selected.add(x.id));
       applyFilter();
     };
     mroot.querySelector("#partNone").onclick = () => {
-      selected = new Set();
+      const q = qEl.value.trim();
+      if (q) {
+        const listToDeselect = ALL.filter(x => x.norm.includes(normText(q)));
+        listToDeselect.forEach(x => selected.delete(x.id));
+      } else {
+        selected = new Set();
+      }
       applyFilter();
     };
     mroot.querySelector("#partCancel").onclick = () => closeModal();

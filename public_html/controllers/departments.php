@@ -261,6 +261,11 @@ try {
     $stmt = $pdo->prepare("UPDATE courses SET name=?, status=? WHERE id=?");
     $stmt->execute([$name, $status, $id]);
 
+    if ($status === 0) {
+      $stmtClasses = $pdo->prepare("UPDATE classes SET status = 0 WHERE course_id = ?");
+      $stmtClasses->execute([$id]);
+    }
+
     log_activity(
       'update',
       'departments',

@@ -350,6 +350,12 @@ function openCourseModal(id = 0, name = "", status = 1) {
     await refreshCourses(); // 🔥 CẬP NHẬT NGAY
     // reload lại đúng bảng KHÓA
     jumpPageAjax("course", 1, window.TOTAL_PAGES_COURSE);
+
+    if (id) {
+      const classInput = document.querySelector('.pager-class input[type="number"]');
+      const currentClassPage = classInput ? parseInt(classInput.value) || 1 : 1;
+      jumpPageAjax("class", currentClassPage, window.TOTAL_PAGES_CLASS);
+    }
   });
 
 }

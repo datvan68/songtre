@@ -151,6 +151,8 @@ if ($action === 'members_insights') {
             {$exprLocked}    AS total_locked,
             {$exprStop}      AS total_stopped
           FROM members m
+          WHERE (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+            AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
         ";
         $meta = $pdo->query($sqlMeta)->fetch(PDO::FETCH_ASSOC);
         if (!$meta) $meta = array();
@@ -170,6 +172,9 @@ if ($action === 'members_insights') {
           FROM classes c
           LEFT JOIN departments d ON d.id = c.department_id
           LEFT JOIN members m ON m.class_id = c.id
+            AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+            AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
+          WHERE c.status = 1 AND (c.course_id IS NULL OR c.course_id IN (SELECT id FROM courses WHERE status = 1))
           GROUP BY c.id, c.name, d.id, d.name, d.type
           HAVING COUNT(m.id) > 0
           ORDER BY {$exprMemberCnt} DESC, COUNT(m.id) DESC, c.name ASC
@@ -187,8 +192,12 @@ if ($action === 'members_insights') {
             {$exprMemberCnt} AS members_count,
             {$exprYouthCnt}  AS youth_count
           FROM departments d
-          LEFT JOIN classes c ON c.department_id = d.id
+          LEFT JOIN classes c ON c.department_id = d.id 
+            AND c.status = 1 
+            AND (c.course_id IS NULL OR c.course_id IN (SELECT id FROM courses WHERE status = 1))
           LEFT JOIN members m ON m.class_id = c.id
+            AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+            AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
           GROUP BY d.id, d.name, d.type
           HAVING COUNT(m.id) > 0
           ORDER BY {$exprMemberCnt} DESC, COUNT(m.id) DESC, {$deptLabel} ASC
@@ -208,6 +217,9 @@ if ($action === 'members_insights') {
               FROM classes c
               {$courseJoin}
               LEFT JOIN members m ON m.class_id = c.id
+                AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+                AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
+              WHERE c.status = 1 AND (c.course_id IS NULL OR c.course_id IN (SELECT id FROM courses WHERE status = 1))
               GROUP BY course_label
               HAVING course_label <> '' AND COUNT(m.id) > 0
               ORDER BY {$exprMemberCnt} DESC, COUNT(m.id) DESC, course_label ASC
@@ -229,6 +241,9 @@ if ($action === 'members_insights') {
             {$exprStop}      AS stopped_count
           FROM classes c
           LEFT JOIN members m ON m.class_id = c.id
+            AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+            AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
+          WHERE c.status = 1 AND (c.course_id IS NULL OR c.course_id IN (SELECT id FROM courses WHERE status = 1))
           GROUP BY c.id, c.name
           HAVING COUNT(m.id) > 0
           ORDER BY ({$exprLocked} + {$exprStop}) DESC,

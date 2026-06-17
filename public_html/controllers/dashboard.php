@@ -28,7 +28,12 @@ $isUserDashboard = !$canManageDashboard;
 // ====================================================================
 if ($canManageDashboard) {
 
-  $totMembers = (int) $pdo->query("SELECT COUNT(*) FROM members")->fetchColumn();
+  $totMembers = (int) $pdo->query("
+    SELECT COUNT(*) 
+    FROM members m
+    WHERE (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+      AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
+  ")->fetchColumn();
   $totCampaigns = (int) $pdo->query("SELECT COUNT(*) FROM campaigns")->fetchColumn();
   $totRegistrations = (int) $pdo->query("SELECT COUNT(*) FROM registrations")->fetchColumn();
 
@@ -44,6 +49,8 @@ if ($canManageDashboard) {
       COUNT(DISTINCT r.campaign_id) AS total_campaigns
     FROM departments d
     LEFT JOIN members m ON m.department_id = d.id
+      AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+      AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
     LEFT JOIN registrations r ON r.user_id = m.user_id
     WHERE d.type = 'khoa'
     GROUP BY d.id, d.name
@@ -58,6 +65,8 @@ if ($canManageDashboard) {
     COUNT(DISTINCT r.campaign_id) AS total_campaigns
   FROM departments d
   LEFT JOIN members m ON m.department_id = d.id
+    AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+    AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
   LEFT JOIN registrations r ON r.user_id = m.user_id
   WHERE d.type = 'khoa'
   GROUP BY d.id, d.name
@@ -92,9 +101,11 @@ if ($canManageDashboard) {
 
   FROM members m
   LEFT JOIN classes cl ON cl.id = m.class_id
-WHERE m.type = 'member'
-  AND m.join_date IS NOT NULL
-  AND m.birth IS NOT NULL
+  WHERE m.type = 'member'
+    AND m.join_date IS NOT NULL
+    AND m.birth IS NOT NULL
+    AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))
+    AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))
   ORDER BY age_youth DESC
   LIMIT 5
 ")->fetchAll(PDO::FETCH_ASSOC);

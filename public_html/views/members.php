@@ -67,7 +67,9 @@ $perPage = 10;
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $offset = ($page - 1) * $perPage;
 
-$where = "WHERE 1=1";
+$where = "WHERE 1=1 AND m.stop_follow = 0";
+$where .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1))";
+$where .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1))";
 $params = [];
 if ($currentRole === 'gvcn') {
   $in = implode(',', array_fill(0, count($gvcnClassIds), '?'));
@@ -186,6 +188,8 @@ if ($currentRole === 'gvcn') {
       SELECT type, COUNT(*) AS total
       FROM members
       WHERE stop_follow = 0
+        AND (course_id IS NULL OR course_id IN (SELECT id FROM courses WHERE status = 1))
+        AND (class_id IS NULL OR class_id IN (SELECT id FROM classes WHERE status = 1))
       GROUP BY type
     ")->fetchAll(PDO::FETCH_KEY_PAIR);
   }
@@ -387,15 +391,6 @@ if ($currentRole === 'gvcn') {
           </select>
         </div>
 
-        <!-- RIGHT: LABEL -->
-        <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none
-           sm:ml-auto shrink-0 w-full sm:w-auto justify-start sm:justify-end">
-          <input type="checkbox" id="hideStopped" class="w-4 h-4 accent-red-600">
-          <span class="text-red-600 font-medium whitespace-nowrap">
-            Ẩn đoàn viên ngừng theo dõi
-          </span>
-        </label>
-
       </div>
 
 
@@ -594,11 +589,6 @@ if ($currentRole === 'gvcn') {
               <th rowspan="2" class="px-3 py-2 text-center">
                 <div class="th-head">
                   <span>Ngừng theo dõi</span>
-                  <select class="js-th-filter" data-key="stop_follow">
-                    <option value="">Tất cả</option>
-                    <option value="0">Đang theo dõi</option>
-                    <option value="1">Ngừng</option>
-                  </select>
                 </div>
               </th>
 
@@ -660,7 +650,7 @@ $departments = $pdo->query("
   ORDER BY type, name
 ")->fetchAll(PDO::FETCH_ASSOC);
 $courses = $pdo->query("SELECT id, name FROM courses WHERE status = 1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
-$classes = $pdo->query("SELECT id, name, department_id, course_id FROM classes WHERE status = 1 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$classes = $pdo->query("SELECT id, name, department_id, course_id FROM classes WHERE status = 1 AND (course_id IS NULL OR course_id IN (SELECT id FROM courses WHERE status = 1)) ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 $chidoanGroups = $pdo->query("
   SELECT id, name
   FROM chidoan_groups

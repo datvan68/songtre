@@ -12,7 +12,7 @@ let MEMBER_PERM = {
 const filterDept = document.getElementById("filterDept");
 const filterCourse = document.getElementById("filterCourse");
 const filterClass = document.getElementById("filterClass");
-const hideStoppedCheckbox = document.getElementById("hideStopped");
+const hideStoppedCheckbox = null;
 
 function escapeHtml(str = "") {
   return str
@@ -201,6 +201,7 @@ async function setLockAllFiltered(lock) {
   const courseId = filterCourse?.value || "";
   const classId = filterClass?.value || "";
   const hideStopped = hideStoppedCheckbox?.checked ? 1 : 0;
+  const hf = getHeaderFilters();
 
   const fd = new FormData();
   fd.append("action", "lock_all");
@@ -414,13 +415,13 @@ function renderUnit(m) {
 async function safeJson(res) {
   // 403 → báo quyền
   if (res.status === 403) {
-    notify("Không có quyền", "Bạn không được phép thao tác chức năng này.", "error");
+    toast("Bạn không được phép thao tác chức năng này.", "error");
     throw new Error("Forbidden");
   }
 
   // 423 → member locked
   if (res.status === 423) {
-    notify("Đã khóa", "Hồ sơ đoàn viên đang bị khóa. Không thể chỉnh sửa.", "error");
+    toast("Hồ sơ đoàn viên đang bị khóa. Không thể chỉnh sửa.", "error");
     throw new Error("Locked");
   }
 
@@ -428,7 +429,7 @@ async function safeJson(res) {
   try {
     return JSON.parse(text);
   } catch (e) {
-    notify("Lỗi backend", text.substring(0, 300), "error");
+    toast("Lỗi backend: " + text.substring(0, 300), "error");
     throw new Error("Bad JSON");
   }
 }
@@ -1036,18 +1037,18 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         json = JSON.parse(text);
       } catch {
-        notify("Lỗi backend", text, "error");
+        toast("Lỗi backend: " + text, "error");
         return;
       }
 
       if (json.ok) {
         notifyReload("Thành công", json.msg || "Đã nhập dữ liệu");
       } else {
-        notify("Lỗi", json.error || "Import thất bại", "error");
+        toast(json.error || "Import thất bại", "error");
       }
 
     } catch (err) {
-      notify("Lỗi JS", err.message, "error");
+      toast("Lỗi JS: " + err.message, "error");
     } finally {
       // 🔓 mở UI + tắt overlay (CHỈ KHI XONG)
       overlay?.classList.add("hidden");

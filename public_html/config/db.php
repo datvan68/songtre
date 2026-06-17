@@ -167,6 +167,36 @@ try {
       // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
   }
 
+  // Tự động thêm các cột mới của đoàn viên ưu tú và cảm tình Đảng vào bảng members nếu chưa có
+  try {
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'is_excellent_member'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `is_excellent_member` TINYINT(1) NOT NULL DEFAULT 0");
+      }
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'excellent_member_date'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `excellent_member_date` DATE DEFAULT NULL");
+      }
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'excellent_member_place'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `excellent_member_place` VARCHAR(255) DEFAULT NULL");
+      }
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'learned_party_class'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `learned_party_class` TINYINT(1) NOT NULL DEFAULT 0");
+      }
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'party_class_date'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `party_class_date` DATE DEFAULT NULL");
+      }
+      $checkMem = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'party_class_place'")->fetch();
+      if (!$checkMem) {
+          $pdo->exec("ALTER TABLE `members` ADD COLUMN `party_class_place` VARCHAR(255) DEFAULT NULL");
+      }
+  } catch (Throwable $dbErr) {
+      // Bỏ qua nếu có lỗi phát sinh trong quá trình chạy DDL tự động
+  }
+
 } catch (Throwable $e) {
   http_response_code(500);
   echo "DB connection failed: " . htmlspecialchars($e->getMessage());

@@ -655,6 +655,8 @@ try {
             forbidden();
 
         $where = " WHERE 1=1 ";
+        $where .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1)) ";
+        $where .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1)) ";
         $params = [];
 
         $keyword = trim($_GET['q'] ?? '');
@@ -2251,6 +2253,8 @@ WHERE mssv=?
 
         $filter = trim($_GET['filter'] ?? '');
         $whereScope = '';
+        $whereScope .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1)) ";
+        $whereScope .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1)) ";
         $params = [];
 
         /* ======================
@@ -2714,6 +2718,8 @@ ORDER BY m.fullname
     if ($action === 'search') {
 
         $where = " WHERE 1=1 ";
+        $where .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1)) ";
+        $where .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1)) ";
         $params = [];
 
         $keyword = trim($_GET['q'] ?? '');
@@ -2922,12 +2928,7 @@ ORDER BY m.fullname
             $params[] = $col_off;
         }
 
-        $col_stop = trim($_GET['stop_follow'] ?? '');
-        if ($col_stop === '0' || $col_stop === '1') {
-            $where .= " AND m.stop_follow = ? ";
-            $params[] = (int) $col_stop;
-            $hideStopped = 0; // đã lọc explicit rồi thì không áp hideStopped nữa
-        }
+
 
         // score_min cần join rs giống data query
         $scoreMinRaw = trim($_GET['score_min'] ?? '');
@@ -2958,9 +2959,7 @@ ORDER BY m.fullname
         /* ======================
            🚫 ẨN NGỪNG THEO DÕI
         ====================== */
-        if ($hideStopped === 1) {
-            $where .= " AND m.stop_follow = 0 ";
-        }
+        $where .= " AND m.stop_follow = 0 ";
 
         /* ======================
            📊 STATS (🔥 QUAN TRỌNG)

@@ -39,7 +39,7 @@ $courses = $pdo->query("
 $totalClass = (int) $pdo->query("SELECT COUNT(*) FROM classes")->fetchColumn();
 $totalPagesClass = max(1, ceil($totalClass / $perPage));
 $classes = $pdo->query("
-  SELECT id, name, department_id, course_id
+  SELECT id, name, department_id, course_id, status
   FROM classes
   ORDER BY id DESC
   LIMIT $perPage OFFSET 0

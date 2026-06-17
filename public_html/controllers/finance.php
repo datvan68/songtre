@@ -2921,15 +2921,6 @@ try {
             $where = ["c.name = ?"];
             $params = [$classText];
 
-            if ($deptId > 0) {
-                $where[] = "c.department_id = ?";
-                $params[] = $deptId;
-            }
-            if ($courseId > 0) {
-                $where[] = "c.course_id = ?";
-                $params[] = $courseId;
-            }
-
             $targetType = trim((string) ($input['target_type'] ?? 'tat_ca'));
             if ($targetType === 'doan_vien') {
                 $where[] = "LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan')";

@@ -163,6 +163,8 @@ try {
         ========================= */
         case 'search_users': {
             $whereScope = " WHERE 1=1 ";
+            $whereScope .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1)) ";
+            $whereScope .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1)) ";
             $params = [];
 
             global $pdo;
@@ -792,15 +794,27 @@ try {
             if ($memberIdLookup > 0) {
                 $className = trim((string)($user['class_name'] ?? $user['class_text'] ?? ''));
 
+                // Lấy tất cả giao dịch sinh viên tham gia và tính toán lại số tiền cá nhân nếu là giao dịch lớp
                 $sqlPaid = "
                     SELECT DISTINCT
                         t.id AS transaction_id,
                         t.item_name,
-                        t.amount,
+                        CASE 
+                            WHEN t.class_text IS NOT NULL AND TRIM(t.class_text) <> '' THEN
+                                ROUND(t.amount / (
+                                    SELECT CASE WHEN COUNT(ftp2.member_id) > 0 THEN COUNT(ftp2.member_id) ELSE 1 END
+                                    FROM finance_transaction_participants ftp2 
+                                    WHERE ftp2.transaction_id = t.id
+                                ))
+                            ELSE t.amount
+                        END AS amount,
                         t.trans_date,
                         t.method,
                         t.status,
-                        'Cá nhân' AS scope
+                        CASE 
+                            WHEN t.class_text IS NOT NULL AND TRIM(t.class_text) <> '' THEN 'Cả lớp'
+                            ELSE 'Cá nhân'
+                        END AS scope
                     FROM finance_transaction_participants p
                     JOIN finance_transactions t ON t.id = p.transaction_id
                     WHERE p.member_id = ?
@@ -808,25 +822,6 @@ try {
                       AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
                 ";
                 $paidParams = [$memberIdLookup];
-
-                if ($className !== '') {
-                    $sqlPaid .= "
-                        UNION
-                        SELECT DISTINCT
-                            t.id AS transaction_id,
-                            t.item_name,
-                            t.amount,
-                            t.trans_date,
-                            t.method,
-                            t.status,
-                            'Cả lớp' AS scope
-                        FROM finance_transactions t
-                        WHERE t.class_text = ?
-                          AND t.type = 'income'
-                          AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
-                    ";
-                    $paidParams[] = $className;
-                }
 
                 $sqlPaid .= " ORDER BY trans_date DESC";
                 $stmtPaid = $pdo->prepare($sqlPaid);
@@ -837,6 +832,7 @@ try {
                 $isDV = in_array($mType, ['member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan']) ? 1 : 0;
                 $isTN = in_array($mType, ['youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh']) ? 1 : 0;
 
+                // Lấy các khoản chưa đóng (chỉ loại trừ nếu sinh viên đã đóng cá nhân)
                 $sqlUnpaid = "
                     SELECT 
                         fi.id,
@@ -850,6 +846,20 @@ try {
                           OR (fi.target_type = 'doan_vien' AND ? = 1)
                           OR (fi.target_type = 'thanh_nien' AND ? = 1)
                       )
+                      -- Chỉ giữ lại khoản thu nếu không có chiến dịch nào liên quan, hoặc sinh viên có đăng ký tham gia chiến dịch đó
+                      AND (
+                          NOT EXISTS (
+                              SELECT 1 FROM campaigns c2
+                              WHERE LOWER(c2.title) LIKE CONCAT('%', LOWER(fi.name), '%')
+                          )
+                          OR EXISTS (
+                              SELECT 1 FROM campaigns c2
+                              JOIN registrations reg ON reg.campaign_id = c2.id
+                              WHERE LOWER(c2.title) LIKE CONCAT('%', LOWER(fi.name), '%')
+                                AND reg.user_id = ?
+                                AND reg.status <> 'cancelled'
+                          )
+                      )
                       AND NOT EXISTS (
                           SELECT 1
                           FROM finance_transaction_participants ftp
@@ -860,21 +870,7 @@ try {
                             AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
                       )
                 ";
-                $unpaidParams = [$isDV, $isTN, $memberIdLookup];
-
-                if ($className !== '') {
-                    $sqlUnpaid .= "
-                        AND NOT EXISTS (
-                            SELECT 1
-                            FROM finance_transactions t
-                            WHERE t.type = 'income'
-                              AND t.class_text = ?
-                              AND t.item_name = fi.name
-                              AND (t.status IS NULL OR t.status NOT IN ('cancelled','rejected'))
-                        )
-                    ";
-                    $unpaidParams[] = $className;
-                }
+                $unpaidParams = [$isDV, $isTN, $targetUid, $memberIdLookup];
 
                 $sqlUnpaid .= " ORDER BY fi.name ASC";
                 $stmtUnpaid = $pdo->prepare($sqlUnpaid);

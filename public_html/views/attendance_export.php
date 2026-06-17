@@ -43,12 +43,12 @@ $data = [
 foreach ($rows as $r) {
 
     // Buổi
-    $session = match ($r['session']) {
+    $sessionMap = [
         'morning' => 'Sáng',
         'afternoon' => 'Chiều',
-        'evening' => 'Tối',
-        default => 'Không xác định'
-    };
+        'evening' => 'Tối'
+    ];
+    $session = $sessionMap[$r['session']] ?? 'Không xác định';
 
     // Thời gian
     $time = date("d/m/Y H:i", strtotime($r['time']));
