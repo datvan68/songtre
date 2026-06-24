@@ -162,14 +162,6 @@ function renderUserActions(card, campaign, userStatus) {
     ✅ Đã đăng ký
   </button>
 
-  ${canCancel ? `
-    <button
-      class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm js-cancel w-full mb-5"
-      data-id="${cid}">
-      ❌ Hủy đăng ký
-    </button>
-  ` : ""}
-
   ${renderShareButton(cid)}
 
   ${campaign.url_zalo ? `
@@ -2314,17 +2306,6 @@ function renderUserActionsWithShare(card, campaign, userStatus) {
         <i data-lucide="check-circle-2" class="w-4 h-4"></i>
         Đã đăng ký
       </button>
-
-      ${canCancel ? `
-        <button type="button"
-          class="js-cancel w-full inline-flex items-center justify-center gap-2
-                 rounded-2xl px-4 py-3 text-sm font-semibold
-                 bg-rose-600 hover:bg-rose-700 text-white"
-          data-id="${cid}">
-          <i data-lucide="x-circle" class="w-4 h-4"></i>
-          Hủy đăng ký
-        </button>
-      ` : ""}
 
       ${renderShareButton(cid)}
 

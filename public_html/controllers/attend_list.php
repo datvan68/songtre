@@ -128,12 +128,10 @@ $campaign = $stm->fetch();
                 <?= htmlspecialchars($campaign['title'] ?? 'Không xác định') ?>
             </h1>
 
-            <?php if (can('attendance', 'print')): ?>
-                <a id="exportBtn" href="<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=<?= $cid ?>"
-                    class="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm shrink-0">
-                    ⬇ Xuất Excel
-                </a>
-            <?php endif; ?>
+            <a id="exportBtn" href="<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=<?= $cid ?>"
+                class="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm shrink-0">
+                ⬇ Xuất Excel
+            </a>
 
         </div>
 
@@ -230,8 +228,10 @@ $campaign = $stm->fetch();
 
 
         // Update link export
-        document.getElementById("exportBtn").href =
-            "<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=" + id;
+        const exportBtn = document.getElementById("exportBtn");
+        if (exportBtn) {
+            exportBtn.href = "<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=" + id;
+        }
 
         // Fetch API
         const res = await api(`index.php?p=attend_list&ajax=1&campaign_id=${id}`);

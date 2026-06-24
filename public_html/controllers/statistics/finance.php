@@ -247,6 +247,9 @@ if ($action === 'unpaid_members') {
         $where .= " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
     }
 
+    // Exclude members marked as stop tracking (stop_follow = 1)
+    $where .= " AND (m.stop_follow = 0 OR m.stop_follow IS NULL)";
+
     $subQueryPersonalParams = [$itemName];
     $subQueryPersonalWhere = "";
     if ($schoolYearId !== '') {
@@ -395,6 +398,9 @@ if ($action === 'export_unpaid_members') {
     } elseif ($targetType === 'thanh_nien') {
         $where .= " AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh')";
     }
+
+    // Exclude members marked as stop tracking (stop_follow = 1)
+    $where .= " AND (m.stop_follow = 0 OR m.stop_follow IS NULL)";
 
     $subQueryPersonalParams = [$itemName];
     $subQueryPersonalWhere = "";

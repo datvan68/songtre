@@ -229,11 +229,10 @@ if ($cid > 0) {
                 <?= htmlspecialchars($campaign['title'] ?? 'Chưa chọn phong trào') ?>
             </h1>
 
-            <?php if (can('attendance', 'print')): ?>
-                <button id="exportBtn" class="hidden px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm shrink-0 transition-all duration-200">
-                    ⬇ Xuất Excel
-                </button>
-            <?php endif; ?>
+            <a id="exportBtn" href="<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=<?= $cid ?>"
+                class="<?= $cid > 0 ? '' : 'hidden' ?> px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm shrink-0 transition-all duration-200">
+                ⬇ Xuất Excel
+            </a>
 
         </div>
 
@@ -330,17 +329,6 @@ if ($cid > 0) {
         }).join("");
     }
 
-    function toggleExportBtn() {
-        const btn = document.getElementById("exportBtn");
-        if (!btn) return;
-        const checkedBoxes = document.querySelectorAll(".attend-checkbox:checked");
-        if (checkedBoxes.length > 0) {
-            btn.classList.remove("hidden");
-        } else {
-            btn.classList.add("hidden");
-        }
-    }
-
     // Toggle tất cả checkbox khi click Chọn tất cả
     document.addEventListener("change", e => {
         if (e.target && (e.target.classList.contains("attend-checkbox") || e.target.id === "selectAllAttend")) {
@@ -349,20 +337,7 @@ if ($cid > 0) {
                 const boxes = document.querySelectorAll(".attend-checkbox");
                 boxes.forEach(box => box.checked = checked);
             }
-            toggleExportBtn();
         }
-    });
-
-    // Lắng nghe click nút xuất Excel động
-    document.addEventListener("click", e => {
-        const btn = e.target.closest("#exportBtn");
-        if (!btn) return;
-        
-        const checkedBoxes = document.querySelectorAll(".attend-checkbox:checked");
-        const ids = Array.from(checkedBoxes).map(box => box.dataset.id).filter(id => id);
-        if (ids.length === 0) return;
-        
-        window.location.href = `<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=${CURRENT_CAMPAIGN}&ids=${ids.join(",")}`;
     });
 
     // ============================
@@ -442,6 +417,13 @@ if ($cid > 0) {
 
         CURRENT_CAMPAIGN = id;
         closeDropdown();
+
+        // Update link export
+        const exportBtn = document.getElementById("exportBtn");
+        if (exportBtn) {
+            exportBtn.href = `<?= BASE_URL ?>controllers/attendance_export.php?campaign_id=${id}`;
+            exportBtn.classList.remove("hidden");
+        }
 
         // Load lại bảng trang 1
         await loadAttendance(1);

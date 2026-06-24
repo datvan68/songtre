@@ -1204,9 +1204,6 @@ LIMIT $offset, $perPage
     exit;
   }
 
-  /* ============================
-      9) USER HỦY ĐĂNG KÝ
-   ============================ */
   if ($action === 'cancel_register') {
 
     if (!auth_user()) {
@@ -1220,53 +1217,12 @@ LIMIT $offset, $perPage
     }
 
     $uid = auth_user()['id'];
-    $campaign_id = (int) $_POST['campaign_id'];
+    $campaign_id = (int) ($_POST['campaign_id'] ?? 0);
 
-    // Kiểm tra có đăng ký hay chưa
-    $stm = $pdo->prepare("
-      SELECT * FROM registrations 
-      WHERE user_id=? AND campaign_id=? LIMIT 1
-    ");
-    $stm->execute([$uid, $campaign_id]);
-    $reg = $stm->fetch();
-
-    if (!$reg) {
-      echo json_encode(['error' => 'Bạn chưa đăng ký phong trào này.']);
-      exit;
-    }
-
-
-    // Nếu đã điểm danh → KHÔNG CHO HỦY
-    $stm = $pdo->prepare("
-      SELECT COUNT(*) FROM attendance_logs 
-      WHERE user_id=? AND campaign_id=? 
-    ");
-    $stm->execute([$uid, $campaign_id]);
-    $checked = (int) $stm->fetchColumn();
-
-    if ($checked > 0) {
-      echo json_encode(['error' => 'Bạn đã điểm danh. Không thể hủy đăng ký.']);
-      exit;
-    }
-
-    $qCamp = $pdo->prepare("SELECT title FROM campaigns WHERE id=?");
-    $qCamp->execute([$campaign_id]);
-    $title = $qCamp->fetchColumn();
-    // Hủy (xóa)
-    $pdo->prepare("
-      DELETE FROM registrations 
-      WHERE user_id=? AND campaign_id=?
-    ")->execute([$uid, $campaign_id]);
-
-    log_activity(
-      'delete',
-      'campaigns',
-      'Phong trào',
-      null,
-      'Hủy đăng ký phong trào: ' . $title
-    );
-
-    echo json_encode(['ok' => 1, 'message' => 'Hủy đăng ký thành công!']);
+    echo json_encode([
+      'ok' => 0,
+      'error' => 'Đã đăng ký phong trào thì không thể hủy.'
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 

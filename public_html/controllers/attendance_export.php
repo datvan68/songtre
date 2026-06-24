@@ -7,7 +7,7 @@ use Shuchkin\SimpleXLSXGen;
 
 auth_guard();
 
-if (!can('attendance', 'print')) {
+if (!can('attend_list', 'view')) {
     http_response_code(403);
     exit('Forbidden');
 }
