@@ -363,12 +363,12 @@ if ($action === 'saved_class_detail') {
 
     // Get members scores
     $stMembers = $pdo->prepare("
-        SELECT mss.*, m.mssv, COALESCE(u.fullname, u.username) AS fullname, u.username
+        SELECT mss.*, m.mssv, COALESCE(m.fullname, u.fullname, u.username) AS fullname, u.username
         FROM member_semester_scores mss
         JOIN members m ON m.id = mss.member_id
         JOIN users u ON u.id = mss.user_id
         WHERE mss.school_year_id = ? AND mss.semester_code = ? AND mss.class_id = ?
-        ORDER BY u.fullname ASC, u.username ASC
+        ORDER BY m.fullname ASC, u.username ASC
     ");
     $stMembers->execute([
         $classData['school_year_id'],

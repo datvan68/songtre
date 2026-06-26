@@ -15,7 +15,7 @@ if (!function_exists('calculate_all_classes_scores')) {
         if (!empty($campaignIds)) {
             $inCam = (count($campaignIds) === 1) ? '?' : str_repeat('?,', count($campaignIds) - 1) . '?';
             $sqlCam = "
-                SELECT id, title
+                SELECT id, title, target
                 FROM campaigns
                 WHERE id IN ($inCam)
                 ORDER BY start_date, id
@@ -32,8 +32,10 @@ if (!function_exists('calculate_all_classes_scores')) {
             $sqlFee = "
                 SELECT 
                     ft.id,
-                    COALESCE(NULLIF(TRIM(ft.item_name), ''), 'Quỹ 1K') AS title
+                    COALESCE(NULLIF(TRIM(ft.item_name), ''), 'Quỹ 1K') AS title,
+                    COALESCE(fi.target_type, 'tat_ca') AS target_type
                 FROM finance_transactions ft
+                LEFT JOIN finance_items fi ON fi.name = ft.item_name AND fi.type = 'income'
                 WHERE ft.id IN ($inFee)
             ";
             $stFee = $pdo->prepare($sqlFee);
@@ -42,7 +44,7 @@ if (!function_exists('calculate_all_classes_scores')) {
         }
 
         // Lọc và phân trang lớp
-        $whereConds = ["d.type = 'khoa'"];
+        $whereConds = ["d.type = 'khoa'", "c.status = 1"];
         $queryParams = [];
 
         if ($pagination !== null) {
@@ -85,7 +87,10 @@ if (!function_exists('calculate_all_classes_scores')) {
                     ORDER BY COALESCE(u.fullname, u.username)
                     SEPARATOR ', '
                 ) AS gvcn_name,
-                COUNT(DISTINCT m.id) AS class_size
+                COUNT(DISTINCT m.id) AS class_size,
+                COUNT(DISTINCT CASE WHEN (m.stop_follow = 0 OR m.stop_follow IS NULL) THEN m.id END) AS tat_ca_count,
+                COUNT(DISTINCT CASE WHEN (m.stop_follow = 0 OR m.stop_follow IS NULL) AND LOWER(CAST(m.type AS CHAR)) IN ('member','doanvien','doan_vien','dv','doan-vien','doan vien','đoàn viên','doan') THEN m.id END) AS doan_vien_count,
+                COUNT(DISTINCT CASE WHEN (m.stop_follow = 0 OR m.stop_follow IS NULL) AND LOWER(CAST(m.type AS CHAR)) IN ('youth','thanhnien','thanh_nien','tn','thanh-nien','thanh nien','thanh') THEN m.id END) AS thanh_nien_count
             FROM gvcn_classes gc
             JOIN classes c       ON c.id = gc.class_id
             JOIN departments d   ON d.id = c.department_id
@@ -134,40 +139,53 @@ if (!function_exists('calculate_all_classes_scores')) {
         $feeMap = [];
         if (!empty($feeIds) && !empty($classIds)) {
             $inFee = (count($feeIds) === 1) ? '?' : str_repeat('?,', count($feeIds) - 1) . '?';
-            $inClass = (count($classIds) === 1) ? '?' : str_repeat('?,', count($classIds) - 1) . '?';
+            $stGetNames = $pdo->prepare("SELECT id, item_name FROM finance_transactions WHERE id IN ($inFee)");
+            $stGetNames->execute($feeIds);
             
-            $sqlFeeCounts = "
-                SELECT
-                    m.class_id,
-                    ftp.transaction_id,
-                    COUNT(DISTINCT ftp.member_id) AS paid_count
-                FROM finance_transaction_participants ftp
-                JOIN members m ON m.id = ftp.member_id
-                JOIN finance_transactions ft ON ft.id = ftp.transaction_id
-                WHERE ft.id IN ($inFee)
-                  AND m.class_id IN ($inClass)
-                  AND (ft.status <> 'hidden' OR ft.status IS NULL)
-            ";
-            $paramsFeeCounts = array_merge($feeIds, $classIds);
-
-            if (db_has_column($pdo, 'finance_transactions', 'school_year_id')) {
-                $sqlFeeCounts .= " AND ft.school_year_id = ?";
-                $paramsFeeCounts[] = $schoolYearId;
+            $feeItems = [];
+            foreach ($stGetNames->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $feeItems[$row['item_name']] = (int) $row['id'];
             }
+            $itemNames = array_keys($feeItems);
 
-            if ($fromDate !== '' && $toDateEx !== '' && db_has_column($pdo, 'finance_transactions', 'created_at')) {
-                $sqlFeeCounts .= " AND ft.created_at >= ? AND ft.created_at < ?";
-                $paramsFeeCounts[] = $fromDate;
-                $paramsFeeCounts[] = $toDateEx;
-            }
+            if (!empty($itemNames)) {
+                $inItemNames = (count($itemNames) === 1) ? '?' : str_repeat('?,', count($itemNames) - 1) . '?';
+                $inClass = (count($classIds) === 1) ? '?' : str_repeat('?,', count($classIds) - 1) . '?';
+                
+                $sqlFeeCounts = "
+                    SELECT
+                        m.class_id,
+                        ft.item_name,
+                        COUNT(DISTINCT ftp.member_id) AS paid_count
+                    FROM finance_transaction_participants ftp
+                    JOIN members m ON m.id = ftp.member_id
+                    JOIN finance_transactions ft ON ft.id = ftp.transaction_id
+                    WHERE ft.item_name IN ($inItemNames)
+                      AND m.class_id IN ($inClass)
+                      AND (ft.status <> 'hidden' OR ft.status IS NULL)
+                ";
+                $paramsFeeCounts = array_merge($itemNames, $classIds);
 
-            $sqlFeeCounts .= " GROUP BY m.class_id, ftp.transaction_id ";
+                if (db_has_column($pdo, 'finance_transactions', 'school_year_id')) {
+                    $sqlFeeCounts .= " AND ft.school_year_id = ?";
+                    $paramsFeeCounts[] = $schoolYearId;
+                }
 
-            $stFC = $pdo->prepare($sqlFeeCounts);
-            $stFC->execute($paramsFeeCounts);
+                if ($fromDate !== '' && $toDateEx !== '' && db_has_column($pdo, 'finance_transactions', 'created_at')) {
+                    $sqlFeeCounts .= " AND ft.created_at >= ? AND ft.created_at < ?";
+                    $paramsFeeCounts[] = $fromDate;
+                    $paramsFeeCounts[] = $toDateEx;
+                }
 
-            foreach ($stFC->fetchAll(PDO::FETCH_ASSOC) as $fc) {
-                $feeMap[(int) $fc['class_id']][(int) $fc['transaction_id']] = (int) $fc['paid_count'];
+                $sqlFeeCounts .= " GROUP BY m.class_id, ft.item_name ";
+
+                $stFC = $pdo->prepare($sqlFeeCounts);
+                $stFC->execute($paramsFeeCounts);
+
+                foreach ($stFC->fetchAll(PDO::FETCH_ASSOC) as $fc) {
+                    $txId = $feeItems[$fc['item_name']];
+                    $feeMap[(int) $fc['class_id']][$txId] = (int) $fc['paid_count'];
+                }
             }
         }
 
@@ -197,15 +215,24 @@ if (!function_exists('calculate_all_classes_scores')) {
             foreach ($feeActivities as $tx) {
                 $txId = (int) $tx['id'];
                 $paid = (int) ($feeMap[$classId][$txId] ?? 0);
-                $ratioText = ($classSize > 0) ? "{$paid}/{$classSize}" : "0/0";
+                
+                $targetType = $tx['target_type'] ?? 'tat_ca';
+                $requiredCount = (int)$cls['tat_ca_count'];
+                if ($targetType === 'doan_vien') {
+                    $requiredCount = (int)$cls['doan_vien_count'];
+                } elseif ($targetType === 'thanh_nien') {
+                    $requiredCount = (int)$cls['thanh_nien_count'];
+                }
+                
+                $ratioText = ($requiredCount > 0) ? "{$paid}/{$requiredCount}" : "0/0";
                 $title = trim((string) $tx['title']) ?: 'Khoản thu';
                 $noteParts[] = $title . ' ' . $ratioText;
 
                 $maxPoint = (float) $getPoint('fee', $txId);
-                $rate = ($classSize > 0) ? ($paid / $classSize) : 0.0;
-                if ($rate > 1) $rate = 1.0;
-
+                $rate = ($requiredCount > 0) ? ($paid / $requiredCount) : ($paid > 0 ? 1.0 : 0.0);
+                $rate = min(1.0, max(0.0, $rate));
                 $earned = round($rate * $maxPoint, 2);
+
                 $feeScores[$txId] = [
                     'id' => $txId,
                     'title' => $title,
@@ -227,10 +254,12 @@ if (!function_exists('calculate_all_classes_scores')) {
                 if ($scoreInResult !== null) {
                     $rate = $scoreInResult / 10.0;
                 } else {
-                    $rate = ($classSize > 0) ? ($joined / $classSize) : 0.0;
+                    $target = (int) ($cam['target'] ?? 0);
+                    $requiredCount = $target > 0 ? $target : (int)$cls['class_size'];
+                    $rate = ($requiredCount > 0) ? ($joined / $requiredCount) : 0.0;
                 }
-                if ($rate > 1) $rate = 1.0;
 
+                $rate = min(1.0, max(0.0, $rate));
                 $earned = round($rate * $maxPoint, 2);
                 $campaignScores[$camId] = [
                     'id' => $camId,
@@ -345,11 +374,11 @@ if ($action === 'class_scoring_detail') {
 
     // 1. Get class members
     $stM = $pdo->prepare("
-        SELECT m.id AS member_id, m.user_id, COALESCE(u.fullname, u.username) AS fullname, u.username
+        SELECT m.id AS member_id, m.user_id, COALESCE(m.fullname, u.fullname, u.username) AS fullname, u.username
         FROM members m
         JOIN users u ON u.id = m.user_id
         WHERE m.class_id = ?
-        ORDER BY u.fullname, u.username
+        ORDER BY m.fullname, u.username
     ");
     $stM->execute([$classId]);
     $members = $stM->fetchAll(PDO::FETCH_ASSOC);
@@ -365,16 +394,49 @@ if ($action === 'class_scoring_detail') {
     $feeParticipation = [];
     if (!empty($feeIds) && !empty($memberIds)) {
         $inFee = (count($feeIds) === 1) ? '?' : str_repeat('?,', count($feeIds) - 1) . '?';
-        $inMem = (count($memberIds) === 1) ? '?' : str_repeat('?,', count($memberIds) - 1) . '?';
-        $sqlF = "
-            SELECT transaction_id, member_id
-            FROM finance_transaction_participants
-            WHERE transaction_id IN ($inFee) AND member_id IN ($inMem)
-        ";
-        $stF = $pdo->prepare($sqlF);
-        $stF->execute(array_merge($feeIds, $memberIds));
-        foreach ($stF->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $feeParticipation[(int)$row['member_id']][(int)$row['transaction_id']] = true;
+        $stGetNames = $pdo->prepare("SELECT id, item_name FROM finance_transactions WHERE id IN ($inFee)");
+        $stGetNames->execute($feeIds);
+        
+        $feeItems = [];
+        foreach ($stGetNames->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $feeItems[$row['item_name']] = (int) $row['id'];
+        }
+        $itemNames = array_keys($feeItems);
+
+        if (!empty($itemNames)) {
+            $inItemNames = (count($itemNames) === 1) ? '?' : str_repeat('?,', count($itemNames) - 1) . '?';
+            $inMem = (count($memberIds) === 1) ? '?' : str_repeat('?,', count($memberIds) - 1) . '?';
+            
+            [$fromDate, $toDateEx] = semesterDateRange($pdo, $schoolYearId, $semesterCode);
+            
+            $sqlF = "
+                SELECT ft.item_name, ftp.member_id
+                FROM finance_transaction_participants ftp
+                JOIN finance_transactions ft ON ft.id = ftp.transaction_id
+                WHERE ft.item_name IN ($inItemNames) 
+                  AND ftp.member_id IN ($inMem)
+                  AND (ft.status <> 'hidden' OR ft.status IS NULL)
+            ";
+            $paramsF = array_merge($itemNames, $memberIds);
+            
+            if (db_has_column($pdo, 'finance_transactions', 'school_year_id')) {
+                $sqlF .= " AND ft.school_year_id = ?";
+                $paramsF[] = $schoolYearId;
+            }
+
+            if ($fromDate !== '' && $toDateEx !== '' && db_has_column($pdo, 'finance_transactions', 'created_at')) {
+                $sqlF .= " AND ft.created_at >= ? AND ft.created_at < ?";
+                $paramsF[] = $fromDate;
+                $paramsF[] = $toDateEx;
+            }
+            
+            $stF = $pdo->prepare($sqlF);
+            $stF->execute($paramsF);
+            
+            foreach ($stF->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $txId = $feeItems[$row['item_name']];
+                $feeParticipation[(int)$row['member_id']][$txId] = true;
+            }
         }
     }
 

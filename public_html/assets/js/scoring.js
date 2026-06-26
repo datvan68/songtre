@@ -7,6 +7,9 @@ let allItems = [];              // All available items fetched from the config A
 let selectedKeys = new Set();   // Set of keys active in current configuration
 let currentViewMode = "summary";
 
+let isConfigConfirmed = false;
+let confirmedConfigSignature = "";
+
 let previewData = null;
 let previewCurrentPage = 1;
 const previewPageSize = 20;
@@ -75,6 +78,83 @@ function loadDraftConfig() {
     console.error("Failed to parse draft config", e);
     return null;
   }
+}
+
+function getConfigSignature() {
+  const year = $("filterYear")?.value || "";
+  const sem = $("filterSemester")?.value || "";
+  const itemData = items.map(it => `${it.key}:${it.point}:${it.locked}`).join("|");
+  return `${year}_${sem}_${itemData}`;
+}
+
+function markConfigDirty() {
+  isConfigConfirmed = false;
+  
+  const btnConfirm = $("btnConfirmScoringConfig");
+  if (btnConfirm) btnConfirm.classList.remove("hidden");
+  
+  const statusEl = $("configConfirmStatus");
+  if (statusEl) {
+    statusEl.textContent = "Cấu hình đã thay đổi. Vui lòng xác nhận cấu hình điểm để xem trước kết quả.";
+    statusEl.classList.remove("hidden");
+    statusEl.classList.add("text-amber-600");
+    statusEl.classList.remove("text-emerald-600");
+  }
+
+  $("configConfirmWrap")?.classList.remove("hidden");
+
+  // Disable export and save semester buttons
+  const btnExport = $("btnExport");
+  const btnSave = $("btnSaveSemester");
+  if (btnExport) {
+    btnExport.setAttribute("disabled", "true");
+    btnExport.classList.add("opacity-50", "cursor-not-allowed");
+  }
+  if (btnSave) {
+    btnSave.setAttribute("disabled", "true");
+    btnSave.classList.add("opacity-50", "cursor-not-allowed");
+  }
+
+  // Hide or reset preview block
+  const previewEmpty = $("previewEmptyMessage");
+  if (previewEmpty) {
+    previewEmpty.textContent = "Vui lòng xác nhận cấu hình điểm để xem trước bảng điểm thi đua.";
+    previewEmpty.classList.remove("hidden");
+  }
+  $("previewTableWrap")?.classList.add("hidden");
+  $("previewFiltersRow")?.classList.add("hidden");
+  $("previewPagination")?.classList.add("hidden");
+}
+
+function canConfirmConfig() {
+  const year = $("filterYear")?.value || "";
+  const sem = $("filterSemester")?.value || "";
+  if (!year || !sem || items.length === 0) return false;
+  const sum = round2(items.reduce((s, it) => s + (it.point || 0), 0));
+  return Math.abs(sum - TOTAL_POINTS) <= 0.02;
+}
+
+function confirmScoringConfig() {
+  if (!canConfirmConfig()) {
+    toast("Cấu hình chưa hợp lệ hoặc tổng điểm chưa đạt 10.00đ.", "error");
+    return;
+  }
+  
+  isConfigConfirmed = true;
+  confirmedConfigSignature = getConfigSignature();
+  saveDraftConfig();
+  
+  const statusEl = $("configConfirmStatus");
+  if (statusEl) {
+    statusEl.textContent = "Cấu hình đã được xác nhận.";
+    statusEl.classList.remove("text-amber-600");
+    statusEl.classList.add("text-emerald-600");
+  }
+  
+  toast("Đã xác nhận cấu hình điểm.", "success");
+  
+  previewCurrentPage = 1;
+  loadPreviewScoring();
 }
 
 // Tạo skeleton loader hàng loạt (animated rows) cho giao diện cao cấp
@@ -265,6 +345,7 @@ async function loadScoringItems() {
     // Hide action buttons in Section 2
     $("configActionsRow")?.classList.add("hidden");
     $("configItemCountBadge")?.classList.add("hidden");
+    $("configConfirmWrap")?.classList.add("hidden");
     return;
   }
 
@@ -322,9 +403,16 @@ async function loadScoringItems() {
     // Show action bar
     $("configActionsRow")?.classList.remove("hidden");
     $("configItemCountBadge")?.classList.remove("hidden");
+    $("configConfirmWrap")?.classList.remove("hidden");
     
     renderConfigTable();
-    loadPreviewScoring();
+    
+    // Automatically confirm if it perfectly matches the last signature
+    if (items.length > 0 && canConfirmConfig() && isConfigConfirmed && confirmedConfigSignature === getConfigSignature()) {
+      loadPreviewScoring();
+    } else {
+      markConfigDirty();
+    }
   } catch (e) {
     console.error(e);
     if (status) status.textContent = "Lỗi tải dữ liệu mục tính điểm.";
@@ -357,25 +445,17 @@ function updateSummary() {
     elSum?.classList.remove("text-rose-600");
   }
 
-  // Enable/Disable Section 3 Actions
-  const btnExport = $("btnExport");
-  const btnSave = $("btnSaveSemester");
-  if (btnExport) {
-    if (isComplete) {
-      btnExport.removeAttribute("disabled");
-      btnExport.classList.remove("opacity-50", "cursor-not-allowed");
+  // Enable/Disable Confirm Config Action
+  const btnConfirm = $("btnConfirmScoringConfig");
+  if (btnConfirm) {
+    const year = $("filterYear")?.value || "";
+    const sem = $("filterSemester")?.value || "";
+    if (isComplete && year && sem && items.length > 0) {
+      btnConfirm.removeAttribute("disabled");
+      btnConfirm.classList.remove("opacity-50", "cursor-not-allowed");
     } else {
-      btnExport.setAttribute("disabled", "true");
-      btnExport.classList.add("opacity-50", "cursor-not-allowed");
-    }
-  }
-  if (btnSave) {
-    if (isComplete) {
-      btnSave.removeAttribute("disabled");
-      btnSave.classList.remove("opacity-50", "cursor-not-allowed");
-    } else {
-      btnSave.setAttribute("disabled", "true");
-      btnSave.classList.add("opacity-50", "cursor-not-allowed");
+      btnConfirm.setAttribute("disabled", "true");
+      btnConfirm.classList.add("opacity-50", "cursor-not-allowed");
     }
   }
 
@@ -436,8 +516,8 @@ function renderConfigTable() {
         />
       </td>
       <td class="px-4 py-3 text-center">
-        <button type="button" class="text-rose-600 hover:text-rose-900 transition p-1" onclick="removeConfigItem('${it.key}')" title="Xóa mục này">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <button type="button" class="text-red-600 hover:text-red-800 transition p-1" onclick="removeConfigItem('${it.key}')" title="Xóa mục này">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
@@ -494,7 +574,7 @@ function computeAndApplyDistribution() {
 
   renderConfigTable();
   saveDraftConfig();
-  loadPreviewScoring();
+  markConfigDirty();
 }
 
 window.removeConfigItem = async function(key) {
@@ -638,6 +718,8 @@ function buildPointsPayload() {
 }
 
 async function loadPreviewScoring() {
+  if (!isConfigConfirmed) return;
+
   const year = $("filterYear")?.value || "";
   const sem = $("filterSemester")?.value || "";
   
@@ -685,9 +767,19 @@ async function loadPreviewScoring() {
     
     previewData = json.data || { campaigns: [], fees: [], classes_scores: [], total_count: 0, departments: [] };
     
-    // Show buttons
-    $("btnExport")?.classList.remove("hidden");
-    $("btnSaveSemester")?.classList.remove("hidden");
+    // Show buttons and remove disabled states
+    const btnExport = $("btnExport");
+    const btnSave = $("btnSaveSemester");
+    if (btnExport) {
+      btnExport.classList.remove("hidden");
+      btnExport.removeAttribute("disabled");
+      btnExport.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+    if (btnSave) {
+      btnSave.classList.remove("hidden");
+      btnSave.removeAttribute("disabled");
+      btnSave.classList.remove("opacity-50", "cursor-not-allowed");
+    }
     
     initDeptFilter();
     renderPreviewTable();
@@ -920,6 +1012,10 @@ window.changePreviewPage = function(page) {
 };
 
 function submitExport() {
+  if (!isConfigConfirmed) {
+    toast("Vui lòng xác nhận cấu hình điểm trước khi xuất Excel", "warning");
+    return;
+  }
   setError("");
   const year = $("filterYear")?.value || "";
   const sem = $("filterSemester")?.value || "";
@@ -960,6 +1056,10 @@ function submitExport() {
 }
 
 async function saveSemesterScores() {
+  if (!isConfigConfirmed) {
+    toast("Vui lòng xác nhận cấu hình điểm trước khi lưu", "warning");
+    return;
+  }
   const year = $("filterYear")?.value || "";
   const sem = $("filterSemester")?.value || "";
   if (!year || !sem) {
@@ -1675,12 +1775,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("filterSemester").onchange = loadScoringItems;
 
   $("btnAuto")?.addEventListener("click", computeAndApplyDistribution);
+  $("btnConfirmScoringConfig")?.addEventListener("click", confirmScoringConfig);
   $("btnExport")?.addEventListener("click", submitExport);
   $("btnSaveSemester")?.addEventListener("click", saveSemesterScores);
 
   // Preview live filters
   let searchTimeout = null;
   $("previewSearchClass")?.addEventListener("input", () => {
+    if (!isConfigConfirmed) return;
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       previewCurrentPage = 1;
@@ -1688,10 +1790,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, 300);
   });
   $("previewFilterDept")?.addEventListener("change", () => {
+    if (!isConfigConfirmed) return;
     previewCurrentPage = 1;
     loadPreviewScoring();
   });
-  $("btnReloadPreview")?.addEventListener("click", loadPreviewScoring);
+  $("btnReloadPreview")?.addEventListener("click", () => {
+    if (!isConfigConfirmed) return;
+    loadPreviewScoring();
+  });
 
   // Saved scores filter triggers
   let savedSearchTimeout = null;

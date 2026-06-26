@@ -135,6 +135,13 @@ auth_guard();
                     </div>
 
                     <div id="scoringError" class="hidden text-sm text-rose-600 font-semibold text-center bg-rose-5 p-3 rounded-lg border border-rose-200"></div>
+
+                    <div id="configConfirmWrap" class="hidden flex flex-col items-center justify-center pt-4 border-t gap-2">
+                        <div id="configConfirmStatus" class="text-sm text-amber-600 font-medium">Vui lòng xác nhận cấu hình điểm để xem trước kết quả.</div>
+                        <button id="btnConfirmScoringConfig" disabled class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                            ✅ Xác nhận cấu hình điểm
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -192,7 +199,7 @@ auth_guard();
                         </div>
                     </div>
 
-                    <div id="previewEmptyMessage" class="text-gray-500 text-center py-4">Chọn Năm học và Học kỳ để xem trước bảng điểm thi đua.</div>
+                    <div id="previewEmptyMessage" class="text-gray-500 text-center py-4">Chọn Năm học và Học kỳ để cấu hình điểm.</div>
 
                     <div class="overflow-x-auto border rounded-xl hidden" id="previewTableWrap">
                         <table class="min-w-full text-sm text-left border-collapse">

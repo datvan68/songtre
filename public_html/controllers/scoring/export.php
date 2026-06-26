@@ -133,38 +133,51 @@ if ($action === 'export_scoring_summary') {
     $feeMap = [];
     if (!empty($feeIds)) {
         $inFee = (count($feeIds) === 1) ? '?' : str_repeat('?,', count($feeIds) - 1) . '?';
-        $sqlFeeCounts = "
-            SELECT
-                m.class_id,
-                ftp.transaction_id,
-                COUNT(DISTINCT ftp.member_id) AS paid_count
-            FROM finance_transaction_participants ftp
-            JOIN members m ON m.id = ftp.member_id
-            JOIN finance_transactions ft ON ft.id = ftp.transaction_id
-            WHERE ft.id IN ($inFee)
-              AND (ft.status <> 'hidden' OR ft.status IS NULL)
-        ";
-
-        $paramsFeeCounts = $feeIds;
-
-        if (db_has_column($pdo, 'finance_transactions', 'school_year_id')) {
-            $sqlFeeCounts .= " AND ft.school_year_id = ?";
-            $paramsFeeCounts[] = $schoolYearId;
+        $stGetNames = $pdo->prepare("SELECT id, item_name FROM finance_transactions WHERE id IN ($inFee)");
+        $stGetNames->execute($feeIds);
+        
+        $feeItems = [];
+        foreach ($stGetNames->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $feeItems[$row['item_name']] = (int) $row['id'];
         }
+        $itemNames = array_keys($feeItems);
 
-        if ($fromDate !== '' && $toDateEx !== '' && db_has_column($pdo, 'finance_transactions', 'created_at')) {
-            $sqlFeeCounts .= " AND ft.created_at >= ? AND ft.created_at < ?";
-            $paramsFeeCounts[] = $fromDate;
-            $paramsFeeCounts[] = $toDateEx;
-        }
+        if (!empty($itemNames)) {
+            $inItemNames = (count($itemNames) === 1) ? '?' : str_repeat('?,', count($itemNames) - 1) . '?';
+            $sqlFeeCounts = "
+                SELECT
+                    m.class_id,
+                    ft.item_name,
+                    COUNT(DISTINCT ftp.member_id) AS paid_count
+                FROM finance_transaction_participants ftp
+                JOIN members m ON m.id = ftp.member_id
+                JOIN finance_transactions ft ON ft.id = ftp.transaction_id
+                WHERE ft.item_name IN ($inItemNames)
+                  AND (ft.status <> 'hidden' OR ft.status IS NULL)
+            ";
 
-        $sqlFeeCounts .= " GROUP BY m.class_id, ftp.transaction_id ";
+            $paramsFeeCounts = $itemNames;
 
-        $stFC = $pdo->prepare($sqlFeeCounts);
-        $stFC->execute($paramsFeeCounts);
+            if (db_has_column($pdo, 'finance_transactions', 'school_year_id')) {
+                $sqlFeeCounts .= " AND ft.school_year_id = ?";
+                $paramsFeeCounts[] = $schoolYearId;
+            }
 
-        foreach ($stFC->fetchAll(PDO::FETCH_ASSOC) as $fc) {
-            $feeMap[(int) $fc['class_id']][(int) $fc['transaction_id']] = (int) $fc['paid_count'];
+            if ($fromDate !== '' && $toDateEx !== '' && db_has_column($pdo, 'finance_transactions', 'created_at')) {
+                $sqlFeeCounts .= " AND ft.created_at >= ? AND ft.created_at < ?";
+                $paramsFeeCounts[] = $fromDate;
+                $paramsFeeCounts[] = $toDateEx;
+            }
+
+            $sqlFeeCounts .= " GROUP BY m.class_id, ft.item_name ";
+
+            $stFC = $pdo->prepare($sqlFeeCounts);
+            $stFC->execute($paramsFeeCounts);
+
+            foreach ($stFC->fetchAll(PDO::FETCH_ASSOC) as $fc) {
+                $txId = $feeItems[$fc['item_name']];
+                $feeMap[(int) $fc['class_id']][$txId] = (int) $fc['paid_count'];
+            }
         }
     }
 
