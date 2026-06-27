@@ -1095,6 +1095,27 @@ document.addEventListener("DOMContentLoaded", () => {
     // MỞ FILE TRỰC TIẾP (tránh lỗi file bị corrupt khi dùng api)
     window.location.href = urlExport;
   });
+
+  // === Xuất Thống Kê (Text) ===
+  document.getElementById("btnExportStats")?.addEventListener("click", () => {
+    const filter = document.getElementById("memberFilter")?.value || "";
+    const deptId = filterDept?.value || "";
+    const courseId = filterCourse?.value || "";
+    const classId = filterClass?.value || "";
+    const hideStopped = hideStoppedCheckbox?.checked ? 1 : 0;
+
+    const urlStats =
+      MEMBER_API
+      + "?action=export_stats"
+      + "&filter=" + encodeURIComponent(filter)
+      + "&department_id=" + deptId
+      + "&course_id=" + courseId
+      + "&class_id=" + classId
+      + "&hide_stopped=" + hideStopped;
+
+    window.location.href = urlStats;
+  });
+
   const btnLockAll = document.getElementById("btnLockAll");
   if (btnLockAll && !btnLockAll.__wired) {
     btnLockAll.__wired = true;

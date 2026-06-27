@@ -166,7 +166,7 @@ if ($action === 'bulk_set_lock') {
         forbidden();
 }
 
-if (in_array($action, ['import_xlsx', 'export_xlsx'])) {
+if (in_array($action, ['import_xlsx', 'export_xlsx', 'export_stats'])) {
     if (!can('members', 'print'))
         forbidden();
 }
@@ -2236,6 +2236,112 @@ WHERE mssv=?
         exit;
     }
 
+    // === EXPORT STATS (TEXT) ===
+    if ($action === 'export_stats') {
+        while (ob_get_level() > 0)
+            ob_end_clean();
+
+        $filter = trim($_GET['filter'] ?? '');
+        $whereScope = '';
+        $whereScope .= " AND (m.course_id IS NULL OR m.course_id IN (SELECT id FROM courses WHERE status = 1)) ";
+        $whereScope .= " AND (m.class_id IS NULL OR m.class_id IN (SELECT id FROM classes WHERE status = 1)) ";
+        $params = [];
+
+        if ($currentRole === 'bithu') {
+            if ((int) $scope['chidoan_group_id'] === 1) {
+                $whereScope .= " AND m.class_id = ? ";
+                $params[] = (int) $scope['class_id'];
+            } else {
+                $whereScope .= " AND m.chidoan_group_id = 2 ";
+            }
+        } elseif ($currentRole === 'gvcn') {
+            $placeholders = implode(',', array_fill(0, count($gvcnClassIds), '?'));
+            $whereScope .= " AND m.class_id IN ($placeholders) ";
+            $params = array_merge($params, $gvcnClassIds);
+        }
+
+        $deptId = (int) ($_GET['department_id'] ?? 0);
+        $courseId = (int) ($_GET['course_id'] ?? 0);
+        $classId = (int) ($_GET['class_id'] ?? 0);
+        $hideStopped = (int) ($_GET['hide_stopped'] ?? 0);
+
+        if ($deptId) {
+            $whereScope .= " AND (m.department_id = ? OR cl.department_id = ?) ";
+            $params[] = $deptId;
+            $params[] = $deptId;
+        }
+
+        if ($courseId) {
+            $whereScope .= " AND m.course_id = ? ";
+            $params[] = $courseId;
+        }
+
+        if ($classId) {
+            if ($currentRole === 'gvcn' && !in_array($classId, $gvcnClassIds, true)) {
+                $whereScope .= " AND 1=0 ";
+            } else {
+                $whereScope .= " AND m.class_id = ? ";
+                $params[] = $classId;
+            }
+        }
+
+        if ($filter === 'stop_follow') {
+            $whereScope .= " AND m.stop_follow = 1 ";
+        } else {
+            if ($hideStopped === 1) {
+                $whereScope .= " AND m.stop_follow = 0 ";
+            }
+            if ($filter !== '') {
+                $whereScope .= " AND m.type = ? ";
+                $params[] = $filter;
+            }
+        }
+
+        $sql = "
+            SELECT 
+                COALESCE(d2.name, d1.name, 'Chưa có Khoa/Phòng') AS dept_name,
+                COALESCE(d2.type, d1.type, 'khoa') AS dept_type,
+                COALESCE(cl.name, 'Chưa có Lớp') AS class_name,
+                COUNT(m.id) AS total_members,
+                SUM(IF(m.type = 'member', 1, 0)) AS total_union_members
+            FROM members m
+            LEFT JOIN classes cl ON cl.id = m.class_id
+            LEFT JOIN departments d1 ON d1.id = m.department_id
+            LEFT JOIN departments d2 ON d2.id = cl.department_id
+            WHERE 1=1
+            $whereScope
+            GROUP BY 
+                COALESCE(d2.name, d1.name, 'Chưa có Khoa/Phòng'),
+                COALESCE(d2.type, d1.type, 'khoa'),
+                COALESCE(cl.name, 'Chưa có Lớp')
+            ORDER BY dept_type, dept_name, class_name
+        ";
+
+        $stm = $pdo->prepare($sql);
+        $stm->execute($params);
+        $rows = $stm->fetchAll(PDO::FETCH_ASSOC);
+
+        $output = "";
+        $currentDept = "";
+
+        foreach ($rows as $r) {
+            $deptPrefix = ($r['dept_type'] === 'phong') ? 'P.' : 'K.';
+            $deptTitle = ($r['dept_name'] === 'Chưa có Khoa/Phòng') ? $r['dept_name'] : $deptPrefix . $r['dept_name'];
+            
+            if ($deptTitle !== $currentDept) {
+                $output .= $deptTitle . "\r\n";
+                $currentDept = $deptTitle;
+            }
+            
+            $output .= "- " . $r['class_name'] . " " . $r['total_members'] . " thành viên, " . $r['total_union_members'] . " đoàn viên\r\n";
+        }
+
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-Disposition: attachment; filename="ThongKeDoanVien.txt"');
+        echo "\xEF\xBB\xBF"; // UTF-8 BOM cho Windows Notepad
+        echo $output;
+        exit;
+    }
 
     // === EXPORT XLSX (CÓ LỌC) ===
 // === EXPORT XLSX (CÓ LỌC) — PhpSpreadsheet (Header y chang mẫu) ===
@@ -2304,13 +2410,16 @@ WHERE mssv=?
             }
         }
 
-        if ($hideStopped === 1) {
-            $whereScope .= " AND m.stop_follow = 0 ";
-        }
-
-        if ($filter !== '') {
-            $whereScope .= " AND m.type = ? ";
-            $params[] = $filter;
+        if ($filter === 'stop_follow') {
+            $whereScope .= " AND m.stop_follow = 1 ";
+        } else {
+            if ($hideStopped === 1) {
+                $whereScope .= " AND m.stop_follow = 0 ";
+            }
+            if ($filter !== '') {
+                $whereScope .= " AND m.type = ? ";
+                $params[] = $filter;
+            }
         }
 
         /* ======================
@@ -2949,17 +3058,17 @@ ORDER BY m.fullname
 
 
         /* ======================
-           🎯 FILTER TYPE
+           🎯 FILTER TYPE & ẨN NGỪNG THEO DÕI
         ====================== */
-        if ($filter !== '') {
-            $where .= " AND m.type = ? ";
-            $params[] = $filter;
+        if ($filter === 'stop_follow') {
+            $where .= " AND m.stop_follow = 1 ";
+        } else {
+            if ($filter !== '') {
+                $where .= " AND m.type = ? ";
+                $params[] = $filter;
+            }
+            $where .= " AND m.stop_follow = 0 ";
         }
-
-        /* ======================
-           🚫 ẨN NGỪNG THEO DÕI
-        ====================== */
-        $where .= " AND m.stop_follow = 0 ";
 
         /* ======================
            📊 STATS (🔥 QUAN TRỌNG)

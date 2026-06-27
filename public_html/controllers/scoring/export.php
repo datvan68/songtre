@@ -93,12 +93,12 @@ if ($action === 'export_scoring_summary') {
                 SEPARATOR ', '
             ) AS gvcn_name,
             COUNT(DISTINCT m.id) AS class_size
-        FROM gvcn_classes gc
-        JOIN classes c       ON c.id = gc.class_id
+        FROM classes c
         JOIN departments d   ON d.id = c.department_id
+        LEFT JOIN gvcn_classes gc ON gc.class_id = c.id
         LEFT JOIN users u    ON u.id = gc.user_id
         LEFT JOIN members m  ON m.class_id = c.id
-        WHERE d.type = 'khoa'
+        WHERE d.type = 'khoa' AND c.status = 1
         GROUP BY c.id, c.name, d.name
         ORDER BY d.name, gvcn_name, c.name
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -112,20 +112,78 @@ if ($action === 'export_scoring_summary') {
 
     // ===== MAP phong trào theo lớp =====
     $campaignMap = [];
-    if ($campaigns) {
-        $ids = array_map(fn($c) => (int) $c['id'], $campaigns);
-        $in = (count($ids) === 1) ? '?' : str_repeat('?,', count($ids) - 1) . '?';
-        $stR = $pdo->prepare("
-            SELECT class_id, campaign_id, joined_quantity, score
-            FROM campaign_class_results
-            WHERE campaign_id IN ($in)
-        ");
-        $stR->execute($ids);
-        foreach ($stR->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $campaignMap[(int) $r['class_id']][(int) $r['campaign_id']] = [
-                'joined' => (int) $r['joined_quantity'],
-                'score' => $r['score'] !== null ? (float)$r['score'] : null
-            ];
+    if (!empty($campaignIds)) {
+        $inCam = (count($campaignIds) === 1) ? '?' : str_repeat('?,', count($campaignIds) - 1) . '?';
+        $stGetCamNames = $pdo->prepare("SELECT id, title FROM campaigns WHERE id IN ($inCam)");
+        $stGetCamNames->execute($campaignIds);
+        
+        $camItems = [];
+        foreach ($stGetCamNames->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $camItems[$row['title']] = (int) $row['id'];
+        }
+        $camTitles = array_keys($camItems);
+
+        if (!empty($camTitles)) {
+            $inCamTitles = (count($camTitles) === 1) ? '?' : str_repeat('?,', count($camTitles) - 1) . '?';
+            
+            $sqlJoined = "
+                SELECT 
+                    m.class_id,
+                    c.title,
+                    COUNT(DISTINCT m.user_id) as joined_quantity
+                FROM members m
+                JOIN (
+                    SELECT user_id, campaign_id 
+                    FROM registrations 
+                    WHERE status <> 'approved'
+                    UNION
+                    SELECT user_id, campaign_id 
+                    FROM attendance_logs 
+                    WHERE result = 'ok'
+                ) as part ON part.user_id = m.user_id
+                JOIN campaigns c ON c.id = part.campaign_id
+                WHERE c.title IN ($inCamTitles)
+                  AND (c.status <> 'hidden' OR c.status IS NULL)
+                  AND c.school_year_id = ?
+                  AND TRIM(c.semester_code) = ?
+                GROUP BY m.class_id, c.title
+            ";
+            $paramsCam = array_merge($camTitles, [$schoolYearId, $semesterCode]);
+            
+            $stJ = $pdo->prepare($sqlJoined);
+            $stJ->execute($paramsCam);
+            foreach ($stJ->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $camId = $camItems[$r['title']];
+                $campaignMap[(int) $r['class_id']][$camId] = [
+                    'joined' => (int) $r['joined_quantity'],
+                    'score' => null
+                ];
+            }
+
+            $sqlCam = "
+                SELECT 
+                    ccr.class_id, 
+                    c.title,
+                    MAX(ccr.score) as score
+                FROM campaign_class_results ccr
+                JOIN campaigns c ON c.id = ccr.campaign_id
+                WHERE c.title IN ($inCamTitles)
+                  AND (c.status <> 'hidden' OR c.status IS NULL)
+                  AND c.school_year_id = ?
+                  AND TRIM(c.semester_code) = ?
+                GROUP BY ccr.class_id, c.title
+            ";
+            
+            $stR = $pdo->prepare($sqlCam);
+            $stR->execute($paramsCam);
+            foreach ($stR->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $cId = (int) $r['class_id'];
+                $camId = $camItems[$r['title']];
+                if (!isset($campaignMap[$cId][$camId])) {
+                    $campaignMap[$cId][$camId] = ['joined' => 0, 'score' => null];
+                }
+                $campaignMap[$cId][$camId]['score'] = $r['score'] !== null ? (float)$r['score'] : null;
+            }
         }
     }
 

@@ -14,12 +14,15 @@ if ($action === 'scoring_items') {
 
     // campaigns
     $sqlCam = "
-        SELECT cam.id, cam.title
+        SELECT 
+            MAX(cam.id) as id, 
+            cam.title
         FROM campaigns cam
         WHERE (cam.status <> 'hidden' OR cam.status IS NULL)
           AND cam.school_year_id = :sy
           AND TRIM(cam.semester_code) = :sem
-        ORDER BY cam.start_date, cam.id
+        GROUP BY cam.title
+        ORDER BY MAX(cam.start_date) ASC, MAX(cam.id) ASC
     ";
     $stCam = $pdo->prepare($sqlCam);
     $stCam->execute([':sy' => $schoolYearId, ':sem' => $semesterCode]);
