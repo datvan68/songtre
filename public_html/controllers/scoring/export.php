@@ -113,6 +113,11 @@ if ($action === 'export_scoring_summary') {
     // ===== MAP phong trào theo lớp =====
     $campaignMap = [];
     if (!empty($campaignIds)) {
+        // Recalculate campaign scores for unlocked campaigns to ensure corrected data is exported
+        if (function_exists('recalculate_unlocked_campaign_scores')) {
+            recalculate_unlocked_campaign_scores($pdo, $campaignIds);
+        }
+
         $inCam = (count($campaignIds) === 1) ? '?' : str_repeat('?,', count($campaignIds) - 1) . '?';
         $stGetCamNames = $pdo->prepare("SELECT id, title FROM campaigns WHERE id IN ($inCam)");
         $stGetCamNames->execute($campaignIds);
@@ -132,20 +137,18 @@ if ($action === 'export_scoring_summary') {
                     c.title,
                     COUNT(DISTINCT m.user_id) as joined_quantity
                 FROM members m
-                JOIN (
-                    SELECT user_id, campaign_id 
-                    FROM registrations 
-                    WHERE status <> 'approved'
-                    UNION
-                    SELECT user_id, campaign_id 
-                    FROM attendance_logs 
-                    WHERE result = 'ok'
-                ) as part ON part.user_id = m.user_id
-                JOIN campaigns c ON c.id = part.campaign_id
+                JOIN registrations r 
+                    ON r.user_id = m.user_id
+                LEFT JOIN attendance_logs al 
+                    ON al.user_id = m.user_id 
+                   AND al.campaign_id = r.campaign_id 
+                   AND al.result = 'ok'
+                JOIN campaigns c ON c.id = r.campaign_id
                 WHERE c.title IN ($inCamTitles)
                   AND (c.status <> 'hidden' OR c.status IS NULL)
                   AND c.school_year_id = ?
                   AND TRIM(c.semester_code) = ?
+                  AND (al.user_id IS NOT NULL OR r.status = 'approved')
                 GROUP BY m.class_id, c.title
             ";
             $paramsCam = array_merge($camTitles, [$schoolYearId, $semesterCode]);
@@ -571,7 +574,7 @@ if ($action === 'export_scoring_summary') {
                 if ($scoreInResult !== null) {
                     $rate = $scoreInResult / 10.0;
                 } else {
-                    $rate = ($classSize > 0) ? ($joined / $classSize) : 0.0;
+                    $rate = ($joined > 0) ? 1.0 : 0.0;
                 }
                 if ($rate > 1)
                     $rate = 1;

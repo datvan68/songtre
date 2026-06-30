@@ -134,9 +134,7 @@ if ($action === 'save_scoring_summary') {
                             WHERE campaign_id IN ($inCam) AND user_id IN ($inUser) AND result = 'ok'
                         ");
                         $stA->execute(array_merge($campaignIds, $userIds));
-                        foreach ($stA->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                            $campParticipation[(int)$row['user_id']][(int)$row['campaign_id']] = true;
-                        }
+                        $attRows = $stA->fetchAll(PDO::FETCH_ASSOC);
 
                         // Registrations
                         $stR = $pdo->prepare("
@@ -145,9 +143,26 @@ if ($action === 'save_scoring_summary') {
                             WHERE campaign_id IN ($inCam) AND user_id IN ($inUser)
                         ");
                         $stR->execute(array_merge($campaignIds, $userIds));
-                        foreach ($stR->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                            if ($row['status'] !== 'approved') {
-                                $campParticipation[(int)$row['user_id']][(int)$row['campaign_id']] = true;
+                        $regRows = $stR->fetchAll(PDO::FETCH_ASSOC);
+
+                        $userRegMap = [];
+                        foreach ($regRows as $row) {
+                            $userRegMap[(int)$row['user_id']][(int)$row['campaign_id']] = $row['status'];
+                        }
+
+                        foreach ($attRows as $row) {
+                            $camId = (int)$row['campaign_id'];
+                            $uId = (int)$row['user_id'];
+                            if (isset($userRegMap[$uId][$camId])) {
+                                $campParticipation[$uId][$camId] = true;
+                            }
+                        }
+
+                        foreach ($regRows as $row) {
+                            $camId = (int)$row['campaign_id'];
+                            $uId = (int)$row['user_id'];
+                            if ($row['status'] === 'approved') {
+                                $campParticipation[$uId][$camId] = true;
                             }
                         }
                     }

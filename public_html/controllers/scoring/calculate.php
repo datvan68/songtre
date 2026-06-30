@@ -117,6 +117,11 @@ if (!function_exists('calculate_all_classes_scores')) {
         // Map kết quả phong trào
         $campaignMap = [];
         if (!empty($campaignIds) && !empty($classIds)) {
+            // Recalculate campaign scores for unlocked campaigns to ensure corrected data is used
+            if (function_exists('recalculate_unlocked_campaign_scores')) {
+                recalculate_unlocked_campaign_scores($pdo, $campaignIds);
+            }
+
             $inCam = (count($campaignIds) === 1) ? '?' : str_repeat('?,', count($campaignIds) - 1) . '?';
             $stGetCamNames = $pdo->prepare("SELECT id, title FROM campaigns WHERE id IN ($inCam)");
             $stGetCamNames->execute($campaignIds);
@@ -278,9 +283,7 @@ if (!function_exists('calculate_all_classes_scores')) {
                 if ($scoreInResult !== null) {
                     $rate = $scoreInResult / 10.0;
                 } else {
-                    $target = (int) ($cam['target'] ?? 0);
-                    $requiredCount = $target > 0 ? $target : (int)$cls['class_size'];
-                    $rate = ($requiredCount > 0) ? ($joined / $requiredCount) : 0.0;
+                    $rate = ($joined > 0) ? 1.0 : 0.0;
                 }
 
                 $rate = min(1.0, max(0.0, $rate));
@@ -483,6 +486,28 @@ if ($action === 'class_scoring_detail') {
 
             $baseParams = array_merge($camTitles, $userIds, [$schoolYearId, $semesterCode]);
 
+            // Get registrations
+            $sqlR = "
+                SELECT c.title, r.user_id, r.status
+                FROM registrations r
+                JOIN campaigns c ON c.id = r.campaign_id
+                WHERE c.title IN ($inCamTitles) 
+                  AND r.user_id IN ($inUser)
+                  AND (c.status <> 'hidden' OR c.status IS NULL)
+                  AND c.school_year_id = ?
+                  AND TRIM(c.semester_code) = ?
+            ";
+            $stR = $pdo->prepare($sqlR);
+            $stR->execute($baseParams);
+            $regRows = $stR->fetchAll(PDO::FETCH_ASSOC);
+
+            // Create registration map to verify registrations
+            $userRegMap = [];
+            foreach ($regRows as $row) {
+                $camId = $camItems[$row['title']];
+                $userRegMap[(int)$row['user_id']][$camId] = $row['status'];
+            }
+
             // Get attendance logs
             $sqlA = "
                 SELECT c.title, al.user_id
@@ -499,32 +524,21 @@ if ($action === 'class_scoring_detail') {
             $stA->execute($baseParams);
             $attRows = $stA->fetchAll(PDO::FETCH_ASSOC);
 
-            // Get registrations
-            $sqlR = "
-                SELECT c.title, r.user_id, r.status
-                FROM registrations r
-                JOIN campaigns c ON c.id = r.campaign_id
-                WHERE c.title IN ($inCamTitles) 
-                  AND r.user_id IN ($inUser)
-                  AND (c.status <> 'hidden' OR c.status IS NULL)
-                  AND c.school_year_id = ?
-                  AND TRIM(c.semester_code) = ?
-            ";
-            $stR = $pdo->prepare($sqlR);
-            $stR->execute($baseParams);
-            $regRows = $stR->fetchAll(PDO::FETCH_ASSOC);
-
-            // Map attendance
+            // Map attendance (only if registered for the campaign)
             foreach ($attRows as $row) {
                 $camId = $camItems[$row['title']];
-                $campParticipation[(int)$row['user_id']][$camId] = true;
+                $uId = (int)$row['user_id'];
+                if (isset($userRegMap[$uId][$camId])) {
+                    $campParticipation[$uId][$camId] = true;
+                }
             }
 
-            // Map registration (status !== 'approved' -> joined)
+            // Map registrations (status === 'approved' -> joined)
             foreach ($regRows as $row) {
-                if ($row['status'] !== 'approved') {
+                if ($row['status'] === 'approved') {
                     $camId = $camItems[$row['title']];
-                    $campParticipation[(int)$row['user_id']][$camId] = true;
+                    $uId = (int)$row['user_id'];
+                    $campParticipation[$uId][$camId] = true;
                 }
             }
         }

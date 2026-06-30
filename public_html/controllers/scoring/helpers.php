@@ -120,3 +120,76 @@ function db_has_column(PDO $pdo, string $table, string $column): bool
         return false;
     }
 }
+
+if (!function_exists('recalculate_unlocked_campaign_scores')) {
+    function recalculate_unlocked_campaign_scores(PDO $pdo, array $campaignIds): void
+    {
+        if (empty($campaignIds)) {
+            return;
+        }
+
+        // Find campaign ids that are LOCKED in campaign_class_results
+        $inCam = (count($campaignIds) === 1) ? '?' : str_repeat('?,', count($campaignIds) - 1) . '?';
+        $st = $pdo->prepare("
+            SELECT campaign_id 
+            FROM campaign_class_results 
+            WHERE campaign_id IN ($inCam) AND locked = 1
+            GROUP BY campaign_id
+        ");
+        $st->execute($campaignIds);
+        $lockedCampaignIds = $st->fetchAll(PDO::FETCH_COLUMN);
+        $lockedCampaignIds = array_map('intval', $lockedCampaignIds);
+
+        // Recalculate campaigns that are not locked (including new ones not yet in results)
+        $unlockedCampaignIds = array_diff($campaignIds, $lockedCampaignIds);
+
+        if (empty($unlockedCampaignIds)) {
+            return;
+        }
+
+        // For each unlocked campaign, perform recalculation
+        foreach ($unlockedCampaignIds as $campaignId) {
+            $campaignId = (int)$campaignId;
+
+            $sql = "
+                INSERT INTO campaign_class_results (
+                    campaign_id,
+                    class_id,
+                    joined_quantity,
+                    target_quantity,
+                    score
+                )
+                SELECT
+                    r.campaign_id,
+                    c.id,
+                    COUNT(DISTINCT m.user_id) AS joined_quantity,
+                    COALESCE(ccs.target_quantity, 0) AS target_quantity,
+                    CASE WHEN COUNT(DISTINCT m.user_id) > 0 THEN 10.0 ELSE 0.0 END AS score
+                FROM members m
+                JOIN classes c ON c.id = m.class_id
+                JOIN registrations r
+                    ON r.user_id = m.user_id
+                   AND r.campaign_id = ?
+                LEFT JOIN attendance_logs al
+                    ON al.user_id = m.user_id
+                   AND al.campaign_id = r.campaign_id
+                   AND al.result = 'ok'
+                LEFT JOIN campaign_class_scores ccs
+                    ON ccs.campaign_id = r.campaign_id
+                   AND ccs.class_id = c.id
+                WHERE
+                    al.user_id IS NOT NULL
+                    OR r.status = 'approved'
+                GROUP BY r.campaign_id, c.id, ccs.target_quantity
+                ON DUPLICATE KEY UPDATE
+                    joined_quantity = VALUES(joined_quantity),
+                    target_quantity = VALUES(target_quantity),
+                    score = VALUES(score),
+                    calculated_at = CURRENT_TIMESTAMP
+            ";
+
+            $pdo->prepare($sql)->execute([$campaignId]);
+        }
+    }
+}
+

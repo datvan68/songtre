@@ -53,7 +53,7 @@ if ($action === 'list') {
 
   COUNT(DISTINCT
     CASE
-      WHEN al.user_id IS NOT NULL OR r.status <> 'approved'
+      WHEN r.user_id IS NOT NULL AND (al.user_id IS NOT NULL OR r.status = 'approved')
       THEN m.user_id
     END
   ) AS joined_quantity,
@@ -183,85 +183,45 @@ if ($action === 'calculate') {
   }
 
   /**
-   * ✅ Check lớp có người quét QR OK mà chưa nhập chỉ tiêu
-   * (chỉ xét lớp phát sinh từ attendance_logs)
-   */
-  $miss = $pdo->prepare("
-    SELECT COUNT(*) FROM (
-      SELECT DISTINCT c.id
-      FROM attendance_logs al
-      JOIN members m ON m.user_id = al.user_id
-      JOIN classes c ON c.id = m.class_id
-      LEFT JOIN campaign_class_scores ccs
-        ON ccs.campaign_id = al.campaign_id
-       AND ccs.class_id = c.id
-      WHERE al.campaign_id = ?
-        AND al.result = 'ok'
-        AND (ccs.target_quantity IS NULL OR ccs.target_quantity <= 0)
-    ) t
-  ");
-  $miss->execute([$campaignId]);
-
-  if ((int) $miss->fetchColumn() > 0) {
-    json_err('Chưa nhập đủ chỉ tiêu cho tất cả lớp');
-  }
-
-  /**
    * ✅ TÍNH ĐIỂM:
    * joined_quantity = COUNT DISTINCT user đã quét QR OK
-   * score = min(10, (joined/target)*10) làm tròn 1 chữ số
+   * score = 10.0 nếu có ít nhất 1 thành viên tham gia, ngược lại 0.0
    */
   $sql = "
     INSERT INTO campaign_class_results (
-  campaign_id,
-  class_id,
-  joined_quantity,
-  target_quantity,
-  score
-)
-SELECT
-  r.campaign_id,
-  c.id,
-
-  COUNT(DISTINCT m.user_id) AS joined_quantity,
-  ccs.target_quantity,
-
-  ROUND(
-    LEAST(
-      10,
-      (COUNT(DISTINCT m.user_id) / ccs.target_quantity) * 10
-    ),
-    1
-  ) AS score
-
-FROM members m
-JOIN classes c ON c.id = m.class_id
-
-JOIN registrations r
-  ON r.user_id = m.user_id
- AND r.campaign_id = ?
-
-LEFT JOIN attendance_logs al
-  ON al.user_id = m.user_id
- AND al.campaign_id = r.campaign_id
- AND al.result = 'ok'
-
-JOIN campaign_class_scores ccs
-  ON ccs.campaign_id = r.campaign_id
- AND ccs.class_id = c.id
-
-WHERE
-  al.user_id IS NOT NULL
-  OR r.status <> 'approved'
-
-GROUP BY c.id, ccs.target_quantity
-
-ON DUPLICATE KEY UPDATE
-  joined_quantity = VALUES(joined_quantity),
-  target_quantity = VALUES(target_quantity),
-  score = VALUES(score),
-  calculated_at = CURRENT_TIMESTAMP
-
+      campaign_id,
+      class_id,
+      joined_quantity,
+      target_quantity,
+      score
+    )
+    SELECT
+      r.campaign_id,
+      c.id,
+      COUNT(DISTINCT m.user_id) AS joined_quantity,
+      COALESCE(ccs.target_quantity, 0) AS target_quantity,
+      CASE WHEN COUNT(DISTINCT m.user_id) > 0 THEN 10.0 ELSE 0.0 END AS score
+    FROM members m
+    JOIN classes c ON c.id = m.class_id
+    JOIN registrations r
+      ON r.user_id = m.user_id
+     AND r.campaign_id = ?
+    LEFT JOIN attendance_logs al
+      ON al.user_id = m.user_id
+     AND al.campaign_id = r.campaign_id
+     AND al.result = 'ok'
+    LEFT JOIN campaign_class_scores ccs
+      ON ccs.campaign_id = r.campaign_id
+     AND ccs.class_id = c.id
+    WHERE
+      al.user_id IS NOT NULL
+      OR r.status = 'approved'
+    GROUP BY r.campaign_id, c.id, ccs.target_quantity
+    ON DUPLICATE KEY UPDATE
+      joined_quantity = VALUES(joined_quantity),
+      target_quantity = VALUES(target_quantity),
+      score = VALUES(score),
+      calculated_at = CURRENT_TIMESTAMP
   ";
 
   $pdo->prepare($sql)->execute([$campaignId]);
@@ -370,7 +330,7 @@ if ($action === 'export') {
       COUNT(DISTINCT m.user_id) AS class_size,
       COUNT(DISTINCT
         CASE
-          WHEN al.user_id IS NOT NULL OR r.status <> 'approved'
+          WHEN r.user_id IS NOT NULL AND (al.user_id IS NOT NULL OR r.status = 'approved')
           THEN m.user_id
         END
       ) AS joined_quantity,
